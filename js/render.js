@@ -27,7 +27,7 @@ class Renderer {
     this.pCopy = P('copy', SH.postVS, SH.copyFS); this.pBright = P('bright', SH.postVS, SH.brightFS); this.pBlur = P('blur', SH.postVS, SH.blurFS);
     this.pComp = P('comp', SH.postVS, SH.compFS); this.pFxaa = P('fxaa', SH.postVS, SH.fxaaFS);
     this.emptyVAO = gl.createVertexArray();
-    this.makeShadow(); this.buildWater(); this.buildShipMesh(); this.buildBox(); this.buildParticleBuffers();
+    this.makeShadow(); this.buildWater(); this.buildShipMesh(); this.buildFigure(); this.buildBox(); this.buildParticleBuffers();
     this.exposure = 1.25; this.bloom = 0.55; this.foamT = 3.2;
     this.bolt = null; this.tmp = new Float32Array(16);
   }
@@ -67,6 +67,7 @@ class Renderer {
     const l = gl.getAttribLocation(this.pLine.p, 'aPos'); gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0); gl.bindVertexArray(null);
     this.boltBuf = gl.createBuffer();
   }
+  buildFigure() { const f = Hull.buildFigure(); this.figVAO = this.meshVAO(f.verts, f.idx); this.figCount = f.idx.length; }
   buildBox() { const mb = new Hull.MB(); mb.box([0, 0, 0], [1, 1, 1], 3, 0); this.boxVAO = this.meshVAO(new Float32Array(mb.v), new Uint32Array(mb.i)); this.boxCount = mb.i.length; }
   buildParticleBuffers() {
     const gl = this.gl; this.pvao = [];
@@ -124,7 +125,7 @@ class Renderer {
   frame(fr) {
     const gl = this.gl, cam = fr.cam, w = fr.world;
     this.resize(fr.width, fr.height);
-    const asp = this.W / this.H, proj = M4.perspective(cam.fov, asp, 0.4, 30000), view = M4.lookAt(cam.pos, cam.target, [0, 1, 0]);
+    const near = cam.near || 0.4, asp = this.W / this.H, proj = M4.perspective(cam.fov, asp, near, 30000), view = M4.lookAt(cam.pos, cam.target, cam.up || [0, 1, 0]);
     const vp = M4.mul(proj, view.m); this.vp = vp; this.viewInfo = view;
     // ---- sun shadow map (ships only) ----
     { const sd = fr.sunDir, ld = V3.norm([sd[0], Math.max(sd[1], 0.16), sd[2]]); const dist = V3.len(V3.sub(cam.pos, cam.target)); const E = clamp(dist * 0.75 + 70, 110, 260), grid = 2 * E / this.SN * 6;
@@ -150,7 +151,7 @@ class Renderer {
     // ---- water ----
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.B.f); gl.viewport(0, 0, this.W, this.H); gl.enable(gl.DEPTH_TEST); gl.depthMask(true);
     p = this.pWater.use(); this.env(p, fr); this.waveU(p, fr.time); p.m('uVP', vp);
-    p.f('uCenter', Math.round(cam.pos[0] / 2) * 2, Math.round(cam.pos[2] / 2) * 2); p.f('uRes', this.W, this.H); p.f('uNear', 0.4); p.f('uFar', 30000);
+    p.f('uCenter', Math.round(cam.pos[0] / 2) * 2, Math.round(cam.pos[2] / 2) * 2); p.f('uRes', this.W, this.H); p.f('uNear', near); p.f('uFar', 30000);
     p.f('uAmp', Waves.amp); p.f('uWindAng', Waves.windAngle); p.f('uFoamT', this.foamT * (0.75 + 0.25 * Waves.amp));
     this.bindTex(0, this.A.c); p.i('uScene', 0); this.bindTex(1, this.A.d); p.i('uDepthT', 1); this.bindTex(2, this.RF.c); p.i('uRefl', 2); this.bindTex(5, this.shadow.d); p.i('uShadow', 5); p.m('uLightVP', this.lightVP); p.f('uRain', clamp(fr.rain / 7000, 0, 1));
     const sa = new Float32Array(48), sb = new Float32Array(48); let n = 0;
@@ -186,6 +187,7 @@ class Renderer {
       p.f('uHullCol', ...(team === 0 ? [.075, .07, .065] : [.07, .075, .085])); p.f('uStripeCol', ...(team === 0 ? [.78, .58, .12] : [.72, .74, .70])); p.f('uTeamCol', ...(team === 0 ? [.82, .06, .05] : [.08, .22, .82]));
       p.f('uRows', C.rows); p.f('uPZ', Hull.PORT_Z[C.ports[0]] - 2, Hull.PORT_Z[C.ports[C.ports.length - 1]] + 2);
       p.f('uScale', sc, sc, sc);
+      p.f('uCrewF', s.crew); { let ins = 0; if (mode !== 'shadow') { const cl = s.toLocal(fr.cam.pos); if (Hull.inside(cl[0] / sc, cl[1] / sc, cl[2] / sc) && cl[1] / sc < Hull.deckY(cl[2] / (sc * Hull.HL)) - 0.25) ins = 1; } p.f('uInside', mode === 'mirror' ? 0 : ins); }
       const nCls = Math.round(d.crewN * (C.crewFrac || 1)); p.f('uCrewN', Math.ceil(nCls * s.crew - 1e-6));
       const bo = s.board != null ? w.ships[s.board] : null; let fs = 1; if (bo) { const l = s.toLocal(bo.com); fs = l[0] >= 0 ? 1 : -1; } p.f('uFight', bo ? 1 : 0); p.f('uFightSide', fs);
       p.m('uModel', model); p.f('uBillow', 0); p.f('uJibSign', s.jibSign || 1);
@@ -193,6 +195,7 @@ class Renderer {
       p.v('uHole', hole, 4); p.i('uHoleN', n); p.i('uSHoleN', 0);
       gl.drawElements(gl.TRIANGLES, d.ranges.hull[1], gl.UNSIGNED_INT, d.ranges.hull[0] * 4);
       gl.drawElements(gl.TRIANGLES, d.ensign[1], gl.UNSIGNED_INT, d.ensign[0] * 4);
+      p.f('uWalk', 0);
       // masts (yards braced with the wind)
       p.i('uHoleN', 0); p.f('uBillow', s.billow || 0);
       for (const m of s.masts) {
@@ -200,6 +203,14 @@ class Renderer {
         const R = M3.mul(s.R, M3.rotY(m.yard)); const a = s.toWorld([m.anchor[0] * sc, m.anchor[1] * sc, m.anchor[2] * sc]); const mm = M4.fromRT(R, a, this.tmp);
         p.m('uModel', mm); sh.fill(0); m.holes.forEach((h, i) => sh.set(h, i * 4)); p.v('uSHole', sh, 4); p.i('uSHoleN', m.holes.length);
         gl.drawElements(gl.TRIANGLES, d.masts[m.i].range[1], gl.UNSIGNED_INT, d.masts[m.i].range[0] * 4);
+      }
+      // walking players (first-person characters) of this ship
+      if (s.chars && !s.sunk) for (const id of Object.keys(s.chars)) {
+        const ch = s.chars[id]; if (!ch || (fr.fps && ch === fr.localChar)) continue;
+        const foot = ch.eyeY != null ? ch.eyeY - Char.EYE * sc : Hull.floorY(ch.lvl, ch.z / sc) * sc;
+        const Rm = M3.mul(s.R, M3.rotY(ch.yaw)); const o = s.toWorld([ch.x, foot, ch.z]); p.m('uModel', M4.fromRT(Rm, o, this.tmp));
+        p.f('uCrewN', 1); p.f('uFight', 0); p.f('uWalk', ch.moving || 0); p.i('uHoleN', 0); p.i('uSHoleN', 0); p.f('uBillow', 0);
+        gl.bindVertexArray(this.figVAO); gl.drawElements(gl.TRIANGLES, this.figCount, gl.UNSIGNED_INT, 0); gl.bindVertexArray(this.shipVAO); p.f('uWalk', 0);
       }
     }
     // broken masts floating in the water

@@ -173,7 +173,7 @@ class World {
     const c = s.toWorld([0, 6 * s.s, 0]); const dx = tgt.com[0] - c[0], dz = tgt.com[2] - c[2], rng = Math.hypot(dx, dz);
     if (rng > 470 || rng < 25) return;
     const tof = rng / 280; const aim = tgt.toWorld([0, (3.6 + this.rnd() * 1.6) * tgt.s, 0]); aim[0] += tgt.vel[0] * tof; aim[2] += tgt.vel[2] * tof;
-    this.fireAt(s, aim, 0.09, 470);
+    this.fireAt(s, aim, s.gun ? 0.03 : 0.09, 470);
   }
   // fire every ready gun that can bear on the world point `aim` (guns are limited in azimuth/elevation by their ports)
   fireAt(s, aim, prob, maxRange, dry) {
@@ -181,7 +181,7 @@ class World {
     if (rng > maxRange || rng < 20) return 0;
     const el = solveElevation(rng, aim[1] - c[1]); let n = 0;
     for (const g of s.guns) {
-      if (g.t > 0 || !g.alive) continue;
+      if (g.t > 0 || !g.alive || this.t - (g.mannedT || -9) < 0.8) continue;
       const gw = s.toWorld(g.p); let hx = aim[0] - gw[0], hz = aim[2] - gw[2]; const hl = Math.hypot(hx, hz) || 1; hx /= hl; hz /= hl;
       const dw = [hx * Math.cos(el), Math.sin(el), hz * Math.cos(el)];
       const dl = M3.mulTV(s.R, dw);
@@ -190,14 +190,20 @@ class World {
     }
     return n;
   }
-  // human-controlled slots: helmsman steers/trims/boards, gunner aims/fires
+  // human-controlled slots: the helmsman must stand at the wheel; the gunner must stand at a gun and sights it by eye.
   playerTick(s, dt) {
     if (s.helm) {
-      const c = s.ctrlH || (s.ctrlH = { rud: 0, sail: 1, board: false });
-      s.rudder += (c.rud - s.rudder) * Math.min(1, dt * 4); s.sailSet += (c.sail - s.sailSet) * Math.min(1, dt * 1.5);
-      if (c.board) { c.board = false; if (!s.board) this.startBoard(s); else this.endBoard(s); }
+      const c = s.ctrlH || (s.ctrlH = { rud: 0, sail: 1, board: false, atHelm: false });
+      const tr = c.atHelm ? c.rud : 0; s.rudder += (tr - s.rudder) * Math.min(1, dt * 4); if (c.atHelm) s.sailSet += (c.sail - s.sailSet) * Math.min(1, dt * 1.5);
+      if (c.board) { c.board = false; if (c.atHelm) { if (!s.board) this.startBoard(s); else this.endBoard(s); } }
     }
-    if (s.gun && !s.sunk) { const c = s.ctrlG; if (c && c.fire && c.aim) this.fireAt(s, c.aim, 0.28, 900); }
+    if (s.chars) for (const id of Object.keys(s.chars)) { const ch = s.chars[id]; if (ch && ch.gi >= 0 && s.guns[ch.gi]) s.guns[ch.gi].mannedT = this.t; }
+    if (s.gun && !s.sunk) { const c = s.ctrlG; if (c && c.fire && c.gi >= 0) this.fireGun(s, c.gi, c.dl); }
+  }
+  // a human fires one specific gun along the direction he is looking (ship-local), nothing else
+  fireGun(s, gi, dl) {
+    const g = s.guns[gi]; if (!g || !g.alive || g.t > 0 || s.crew < 0.08 || s.board != null) return false;
+    const n = V3.norm(dl); const dw = M3.mulV(s.R, n); this.fire(s, g, dw); g.mannedT = this.t; return true;
   }
   // ---------- crew, muskets, boarding ----------
   startBoard(s) {

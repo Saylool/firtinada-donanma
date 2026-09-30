@@ -135,14 +135,15 @@ void main(){
 // ---------------- ships / debris ----------------
 SH.shipVS = HEAD + `
 in vec3 aPos; in vec3 aNrm; in vec2 aUV; in float aMat; in float aEx;
-uniform mat4 uVP,uModel; uniform vec3 uScale; uniform float uBillow,uJibSign,uTime,uFight,uFightSide,uMirror;
+uniform mat4 uVP,uModel; uniform vec3 uScale; uniform float uBillow,uJibSign,uTime,uFight,uFightSide,uMirror,uWalk;
 out vec3 vPos; out vec3 vW; out vec3 vN; out vec2 vUV; flat out float vMat; flat out float vEx;
 float bul(float u,float v){ float fl=sin(3.14159*u); float t=1.-v; return uBillow*3.4*fl*sin(1.5708*t)*(.55+.45*sin(3.14159*t)); }
 void main(){
   vec3 ap=aPos; vec3 n=aNrm; vec2 uv=aUV; int m=int(aMat+.5);
   if(m==7){ float id=floor(aEx/8.); float part=aEx-id*8.; float ph=id*1.7; float base=aUV.x; float hs=fract(sin(id*91.3)*437.5);
     ap.x+=uFightSide*uFight*(hs*3.2+.5); ap.y+=.04*sin(uTime*2.+ph)+uFight*abs(sin(uTime*5.+ph))*.12; ap.z+=uFight*sin(uTime*3.+ph)*.5;
-    if(part>1.5&&part<2.5||part>4.5){ float w=clamp((base+1.5-aPos.y)/0.9,0.,1.); float sw=sin(uTime*(2.4+uFight*8.)+ph)*(.22+uFight*.9); ap.z+=sw*w*(part>4.5?1.9:1.); ap.y+=abs(sw)*w*(part>4.5?.7:.2)*(.2+uFight); } }
+    if(part<.5){ float wl=clamp((base+.9-aPos.y)/.85,0.,1.); ap.z+=sin(uTime*8.+(aPos.x>0.?3.14:0.))*.3*wl*uWalk; ap.y+=abs(sin(uTime*8.))*.02*uWalk; }
+    if(part>1.5&&part<2.5||part>4.5){ float w=clamp((base+1.5-aPos.y)/0.9,0.,1.); float sw=sin(uTime*(2.4+uFight*8.+uWalk*5.)+ph)*(.22+uFight*.9+uWalk*.35); ap.z+=sw*w*(part>4.5?1.9:1.); ap.y+=abs(sw)*w*(part>4.5?.7:.2)*(.2+uFight); } }
   vec3 p=ap*uScale;
   vPos=p;
   if(m==2){
@@ -159,13 +160,13 @@ void main(){
 }`;
 SH.shipFS = HEAD + SH.noise + SH.shadow + Waves.glsl + SH.env + `
 in vec3 vPos; in vec3 vW; in vec3 vN; in vec2 vUV; flat in float vMat; flat in float vEx; out vec4 oCol;
-uniform float uRows,uCrewN; uniform vec2 uPZ; uniform vec3 uHullCol,uStripeCol,uTeamCol; uniform vec4 uHole[24]; uniform int uHoleN; uniform vec4 uSHole[10]; uniform int uSHoleN; uniform float uBillow,uMirror; uniform int uKind;
+uniform float uRows,uCrewN,uCrewF,uInside; uniform vec2 uPZ; uniform vec3 uHullCol,uStripeCol,uTeamCol; uniform vec4 uHole[24]; uniform int uHoleN; uniform vec4 uSHole[10]; uniform int uSHoleN; uniform float uBillow,uMirror; uniform int uKind;
 vec3 bumpN(vec3 N,float h,float k){ vec3 dpx=dFdx(vW),dpy=dFdy(vW); float hx=dFdx(h),hy=dFdy(h); vec3 r1=cross(dpy,N),r2=cross(N,dpx); float det=dot(dpx,r1); vec3 g=sign(det)*(hx*r1+hy*r2); return normalize(abs(det)*N-k*g); }
 float ridge(float x,float w){ return ss(w,0.,abs(x)); }
 void main(){
   if(uMirror>.5&&vW.y>-.15) discard;
   int m=int(vMat+.5); vec3 P=vPos;
-  if(m==6&&vEx>.5){ float e=vEx-1.; float row=floor(e/16.+.001); float pi=e-row*16.; float pz0=uPZ.x+2., pz1=uPZ.y-2.; float zz=-17.+4.*pi; if(row>uRows-.5||zz<pz0-.1||zz>pz1+.1) discard; } vec3 Vv=normalize(uCam-vW); vec3 N=normalize(vN);
+  if(vEx>=2000.){ float e=vEx-2001.; float row=floor(e/16.+.001); float pi=e-row*16.; float pz0=uPZ.x+2., pz1=uPZ.y-2.; float zz=-17.+4.*pi; if(row>uRows-.5||zz<pz0-.1||zz>pz1+.1) discard; } vec3 Vv=normalize(uCam-vW); vec3 N=normalize(vN);
   bool back=dot(N,Vv)<0.; if(back) N=-N;
   vec3 alb=vec3(.3); float spec=.1, shin=30.; float ao=1.; float emis=0.;
   float wl=waveH(vW.xz); float rel=vW.y-wl;
@@ -192,8 +193,9 @@ void main(){
       float pz=mod(P.z+19.,4.)-2.;
       bool inZ=P.z>uPZ.x&&P.z<uPZ.y;
       float r1=abs(sy-6.9), r2=abs(sy-8.7);
-      if(inZ&&abs(N.x)>.5&&(abs(pz)<.58&&(r1<.5||(uRows>1.5&&r2<.5)))){ alb=vec3(.16,.02,.02); if(abs(pz)>.46||min(r1,r2)>.4) alb=uTeamCol*.5; ao=.35; }
+      if(inZ&&abs(N.x)>.5&&(abs(pz)<.74&&(r1<.66||(uRows>1.5&&r2<.66)))){ if(abs(pz)>.6||min(r1,r2)>.52) alb=uTeamCol*.6; else discard; }
       alb=mix(alb,vec3(.6,.62,.6)*.4,ridge(rel-.02,.28)*wet*(.4+.6*vnoise(vW.xz*3.+uTime))*.6);
+      if(back) alb=vec3(.40,.10,.07)*(.7+.6*grain)*(1.-.5*clamp(seam,0.,1.));
       N=bumpN(N,-clamp(seam,0.,1.)*.5+grain*.12,.0035);
     }
     spec=.35; shin=60.;
@@ -216,7 +218,7 @@ void main(){
     spec=.02; shin=8.; ao=.72+.28*vUV.y; ao*=.8+.2*sin(3.14159*vUV.x);
     // seams
     alb*=1.-.35*ridge(fract(P.x*.11+.5)-.0,.02); N=bumpN(N,fbm(P.xy*1.3,3)*.6+sin(P.x*9.+fbm(P.xy*.6,2)*6.)*.15,.03);
-  } else if(m==7){ float id=floor(vEx/8.); float part=vEx-id*8.; if(id>=uCrewN) discard;
+  } else if(m==7){ float id=floor(vEx/8.); float part=vEx-id*8.; if(id<100.&&id>=uCrewN) discard; if(id>=100.){ float g=id-100.; float row=floor(g/32.); float pi=floor((g-row*32.)/2.); float zz=-17.+4.*pi; if(row>uRows-.5||zz<uPZ.x+1.9||zz>uPZ.y-1.9||hash21(vec2(id,4.))>uCrewF*1.25) discard; }
     if(part<.5) alb=vec3(.10,.09,.09); else if(part<1.5||part<2.5) alb=mix(uTeamCol*.5,vec3(.55,.5,.42),step(.5,fract(hash21(vec2(id,3.))*3.))*step(1.5,part)*.0); else if(part<3.5) alb=vec3(.72,.52,.40); else if(part<4.5) alb=vec3(.04); else { alb=vec3(.72,.75,.8); spec=.9; shin=80.; }
     if(part<3.5&&part>1.5&&part<2.5) alb=uTeamCol*.5; spec=max(spec,.08);
   } else if(m==3){
@@ -227,13 +229,14 @@ void main(){
   // lighting
   vec3 L=uSunDir; float ndl=dot(N,L); float dif=max(ndl,0.); if(m==2||m==5){ dif=max(ndl,0.)+.5*max(-ndl,0.); }
   float shd=shadowAt(vW,N,abs(ndl)); dif*=shd;
-  vec3 amb=mix(vec3(.05,.055,.062),vec3(.17,.19,.22),N.y*.5+.5)*1.1*uLight;
+  vec3 amb=mix(vec3(.05,.055,.062),vec3(.17,.19,.22),N.y*.5+.5)*1.1*uLight*mix(1.,.45,uInside);
   vec3 fl=vec3(.55,.65,1.)*uFlash*(.4+.6*max(dot(N,uFlashDir),0.))*1.6;
-  float inner=back&&m==0?.28:1.;
+  float inner=back&&m==0?.85:1.;
   vec3 col=alb*((uSunCol*dif*(1.-.5*wet)+amb+fl)*ao*inner);
   vec3 H=normalize(L+Vv); col+=uSunCol*spec*pow(max(dot(N,H),0.),shin)*(.4+wet)*step(0.,ndl)*shd;
   col+=alb*emis*2.*(.35+2.5*clamp(1.-uLight*2.5,0.,1.));
   col+=alb*flashLights(vW,N)*ao;
+  if(uInside>.5){ float lam=ss(15.,1.5,distance(vW,uCam)); col+=alb*vec3(1.,.72,.42)*lam*(.55+.25*max(dot(N,normalize(uCam-vW)),0.))*ao*(.9+.1*sin(uTime*7.+floor(vW.x)*2.)); }
   // waterline darkening + fade under the sea (the water pass does the refraction)
   float dist=distance(uCam,vW); col=applyFog(col,dist,Vv);
   oCol=vec4(col,1.);
@@ -310,7 +313,7 @@ SH.shadowFS = HEAD + `
 in vec3 vPos; in vec3 vW; in vec3 vN; in vec2 vUV; flat in float vMat; flat in float vEx; out vec4 oCol;
 uniform float uRows,uCrewN; uniform vec2 uPZ; uniform vec4 uSHole[10]; uniform int uSHoleN;
 void main(){ int m=int(vMat+.5);
-  if(m==7){ float id=floor(vEx/8.); if(id>=uCrewN) discard; }
-  if(m==6&&vEx>.5){ float e=vEx-1.; float row=floor(e/16.+.001); float pi=e-row*16.; float zz=-17.+4.*pi; if(row>uRows-.5||zz<uPZ.x+1.9||zz>uPZ.y-1.9) discard; }
+  if(m==7){ float id=floor(vEx/8.); if(id<100.&&id>=uCrewN) discard; if(id>=100.){ float g=id-100.; float row=floor(g/32.); float pi=floor((g-row*32.)/2.); float zz=-17.+4.*pi; if(row>uRows-.5||zz<uPZ.x+1.9||zz>uPZ.y-1.9) discard; } }
+  if(vEx>=2000.){ float e=vEx-2001.; float row=floor(e/16.+.001); float pi=e-row*16.; float zz=-17.+4.*pi; if(row>uRows-.5||zz<uPZ.x+1.9||zz>uPZ.y-1.9) discard; }
   if(m==2){ for(int i=0;i<10;i++){ if(i>=uSHoleN)break; if(distance(vPos.xy,uSHole[i].xy)<uSHole[i].w) discard; } }
   oCol=vec4(0.); }`;

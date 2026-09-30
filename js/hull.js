@@ -25,6 +25,9 @@ const Hull = (() => {
     if (y < keel(s) || y > rim(s)) return false;
     return Math.abs(x) <= halfWidth(s, y);
   };
+  const FLOORS = [null, 7.5, 5.7], HATCH = { x: 1.7, z0: 4.3, z1: 7.7 };
+  const floorY = (lv, z) => (lv === 0 ? deckY(z / HL) : FLOORS[lv]);
+  const halfW = (lv, z) => { const sz = z / HL; if (Math.abs(sz) >= 1) return 0; return lv === 0 ? Math.max(0, halfBeam(sz) * sec(1) - 0.05) : Math.max(0, halfWidth(sz, FLOORS[lv]) - 0.08); };
   const MASTS = [
     { z: 14.5, h: 37 }, { z: 1.0, h: 42 }, { z: -11.5, h: 32 }];
   const SAILS = [ // fractions of mast height: yb, yt, bottom width factor
@@ -114,10 +117,23 @@ const Hull = (() => {
     }
     // transom
     mb.grid(10, NT, (a, b) => { const s = -1, t = b; const k = keel(s), r = rim(s); const w = halfBeam(s) * sec(t); return [[(a * 2 - 1) * w, k + t * (r - k), s * HL], [0, 0.15, -1]]; }, 0, 1);
-    // deck
-    mb.grid(4, NS, (a, b) => { const s = -Math.cos(b * Math.PI); const w = Math.max(0.02, halfBeam(s) * sec(1) - 0.05); return [[(a * 2 - 1) * w, deckY(s), s * HL], [0, 1, 0]]; }, 1, 0);
+    // decks: main deck (with the hatch opening), upper and lower gun-deck floors
+    const slab = (lv, mat, hole) => {
+      const zs = new Set(); for (let j = 0; j <= 44; j++) zs.add(+(-Math.cos(j / 44 * Math.PI) * HL).toFixed(3)); if (hole) { zs.add(hole.z0); zs.add(hole.z1); }
+      const zl = [...zs].sort((a, b) => a - b); const V = (x, z) => mb.vert([x, floorY(lv, z), z], [0, 1, 0], 0, 0, mat, 0);
+      for (let k = 0; k + 1 < zl.length; k++) {
+        const za = zl[k], zb = zl[k + 1], wa = halfW(lv, za), wb = halfW(lv, zb); if (wa < 0.3 && wb < 0.3) continue;
+        const inHole = hole && za >= hole.z0 - 1e-3 && zb <= hole.z1 + 1e-3;
+        const cols = inHole ? [[-1, -hole.x], [hole.x, 1]] : [[-1, 1]];
+        for (const [a, b] of cols) { const q = [V(a < 0 && inHole ? -wa : (a === -1 ? -wa : a), za), V(b === 1 ? wa : b, za), V(b === 1 ? wb : b, zb), V(a === -1 ? -wb : a, zb)]; mb.quad(q[0], q[1], q[2], q[3]); mb.quad(q[0], q[3], q[2], q[1]); }
+      }
+    };
+    slab(0, 1, HATCH); slab(1, 1, HATCH); slab(2, 1, null);
     // hatches, capstan, wheel
-    mb.box([0, deckY(0.05) + 0.3, 6], [3.4, 0.6, 3.4], 3); mb.box([0, deckY(0.05) + 0.3, -4], [3, 0.6, 5], 3);
+    { const hy = deckY(0.22) + 0.22, hz = (HATCH.z0 + HATCH.z1) / 2; mb.box([HATCH.x + 0.05, hy, hz], [0.14, 0.44, 3.5], 3); mb.box([-HATCH.x - 0.05, hy, hz], [0.14, 0.44, 3.5], 3); mb.box([0, hy, HATCH.z0 - 0.05], [3.5, 0.44, 0.14], 3); mb.box([0, hy, HATCH.z1 + 0.05], [3.5, 0.44, 0.14], 3);
+      for (const sx of [-0.45, 0.45]) mb.box([sx, (5.7 + deckY(0.22) + 0.6) / 2, HATCH.z1 - 0.15], [0.07, deckY(0.22) + 0.6 - 5.7, 0.07], 3);
+      for (let yy = 6.0; yy < deckY(0.22) + 0.4; yy += 0.38) mb.box([0, yy, HATCH.z1 - 0.15], [0.9, 0.06, 0.07], 3); }
+    mb.box([0, deckY(-0.15) + 0.3, -4], [3, 0.6, 5], 3);
     mb.cyl([0, deckY(0.3), 9.5], [0, deckY(0.3) + 1.3, 9.5], 0.5, 0.45, 8, 3);
     mb.box([0, deckY(-0.5) + 0.35, -18.5], [1.6, 0.7, 1.4], 3); mb.cyl([0, deckY(-0.5) + 1.0, -19.5], [0, deckY(-0.5) + 1.0, -19.5 + 0.01], 0.6, 0.6, 10, 3);
     // rail cap along the bulwark, open taffrail + forecastle rail, quarter galleries, lifeboat, anchors, lion figurehead
@@ -140,10 +156,14 @@ const Hull = (() => {
     }
     { const y = deckY(-0.27) + 0.05; mb.box([0, y + 0.45, -8], [2.0, 0.9, 5.2], 3); mb.box([0, y + 0.95, -8], [1.6, 0.2, 4.6], 1); mb.box([0, y + 0.45, -8], [0.12, 0.92, 5.3], 4); }
     { const hy = rim(1) + 0.9; mb.box([0, hy, 27.3], [0.9, 0.9, 1.4], 4); mb.box([0, hy - 0.45, 28.1], [0.55, 0.5, 0.9], 4); mb.cyl([0, hy, 26.6], [0, hy, 27.0], 0.75, 0.6, 8, 4); for (const sx of [-1, 1]) mb.box([sx * 0.27, hy + 0.55, 27.6], [0.14, 0.35, 0.14], 4); }
-    // cannon barrels poking through the ports
+    // cannons on their carriages behind the ports (ex >= 2000 encodes row/port so classes can hide unused guns), powder kegs between them
     for (const g of guns()) {
-      const side = g.side, s = g.p[2] / HL, w = halfWidth(s, g.p[1]);
-      mb.cyl([side * (w - 1.3), g.p[1], g.p[2]], [side * (w + 0.35), g.p[1], g.p[2]], 0.27, 0.2, 8, 6, 1 + g.row * 16 + PORT_Z.indexOf(g.p[2]));
+      const side = g.side, s = g.p[2] / HL, w = halfWidth(s, g.p[1]), fy = g.row === 0 ? FLOORS[2] : FLOORS[1], code = 2001 + g.row * 16 + PORT_Z.indexOf(g.p[2]);
+      mb.cyl([side * (w - 2.4), g.p[1], g.p[2]], [side * (w + 0.35), g.p[1], g.p[2]], 0.29, 0.21, 8, 6, code);
+      mb.cyl([side * (w - 2.45), g.p[1], g.p[2]], [side * (w - 2.25), g.p[1], g.p[2]], 0.22, 0.3, 8, 6, code);
+      mb.box([side * (w - 1.15), fy + 0.42, g.p[2]], [1.9, 0.62, 1.25], 3, code);
+      for (const dz of [-0.62, 0.62]) for (const dx of [-0.75, 0.45]) mb.cyl([side * (w - 1.15 + dx), fy + 0.3, g.p[2] + dz], [side * (w - 1.15 + dx), fy + 0.3, g.p[2] + dz * 1.12], 0.3, 0.3, 8, 6, code);
+      if (PORT_Z.indexOf(g.p[2]) % 2 === 0) mb.box([side * (w - 1.3), fy + 0.35, g.p[2] + 2], [0.7, 0.7, 0.7], 3, code);
     }
     // bowsprit, figurehead, stern lanterns
     const bs0 = [0, rim(0.95) - 1.6, 20], bs1 = [0, rim(1) + 6.2, 37.5];
@@ -157,23 +177,28 @@ const Hull = (() => {
     tri([0, bs1[1] - 0.3, bs1[2] - 0.6], [0, 33, 15.6], [0, rim(0.7) + 3.5, 22]);
     tri([0, bs1[1] - 2.5, bs1[2] - 9], [0, 27, 15.6], [0, rim(0.7) + 2.5, 21]);
     // ---- crew: baked into the hull mesh, animated in the vertex shader (id/part packed in aEx, base height in uv.x)
-    { const rnd = mulberry32(9), spots = [];
-      const add = (x, z, yaw) => spots.push([x, z, yaw]);
-      for (let z = -14; z <= 17; z += 3.1) for (const sd of [-1, 1]) { const s2 = z / HL; add(sd * (halfBeam(s2) * sec(1) - 1.25), z + (rnd() - 0.5) * 0.8, sd > 0 ? Math.PI / 2 : -Math.PI / 2); }
-      add(0, -20.4, 0); add(1.2, -21.5, 3.1); add(-1.3, -18, 1); add(0.5, -23, 3); add(2.6, 20.5, 0); add(-2.6, 20.8, 0); add(0, 22.5, 0);
-      add(1.8, 4.5, 1.5); add(-1.8, 6.5, -1.5); add(1.4, -3.5, 0.5); add(-1.4, 10.5, 2);
-      for (let i = spots.length - 1; i > 0; i--) { const j = (rnd() * (i + 1)) | 0; [spots[i], spots[j]] = [spots[j], spots[i]]; }
-      out.crewN = spots.length;
-      spots.forEach(([x, z, yaw], id) => {
-        const y0 = deckY(z / HL), c = Math.cos(yaw), sn = Math.sin(yaw); mb.uo = [y0, id];
+    const figure = (x, y0, z, yaw, id) => {
+        const c = Math.cos(yaw), sn = Math.sin(yaw); mb.uo = [y0, id];
         const P = (dx, dy, dz) => [x + dx * c + dz * sn, y0 + dy, z - dx * sn + dz * c];
         const part = k => id * 8 + k;
         mb.cyl(P(-0.16, 0.05, 0), P(-0.16, 0.85, 0), 0.11, 0.1, 5, 7, part(0)); mb.cyl(P(0.16, 0.05, 0), P(0.16, 0.85, 0), 0.11, 0.1, 5, 7, part(0));
         mb.cyl(P(0, 0.85, 0), P(0, 1.5, 0), 0.24, 0.2, 6, 7, part(1));
         mb.cyl(P(-0.29, 1.45, 0), P(-0.34, 0.8, 0.12), 0.07, 0.06, 4, 7, part(2)); mb.cyl(P(0.29, 1.45, 0), P(0.36, 0.85, 0.35), 0.07, 0.06, 4, 7, part(2));
         mb.cyl(P(0, 1.5, 0), P(0, 1.78, 0), 0.13, 0.12, 6, 7, part(3)); mb.cyl(P(0, 1.78, 0), P(0, 1.9, 0), 0.19, 0.12, 6, 7, part(4));
-        mb.cyl(P(0.36, 0.85, 0.35), P(0.45, 1.5, 0.75), 0.03, 0.02, 4, 7, part(5)); // cutlass in the right hand
-      }); mb.uo = null; }
+        mb.cyl(P(0.36, 0.85, 0.35), P(0.45, 1.5, 0.75), 0.03, 0.02, 4, 7, part(5)); mb.uo = null;
+    };
+    out.figure = figure;
+    { const rnd = mulberry32(9), spots = [];
+      const add = (x, z, yaw) => spots.push([x, z, yaw]);
+      for (let z = -14; z <= 17; z += 3.1) for (const sd of [-1, 1]) { const s2 = z / HL; add(sd * (halfBeam(s2) * sec(1) - 1.25), z + (rnd() - 0.5) * 0.8, sd > 0 ? Math.PI / 2 : -Math.PI / 2); }
+      add(2.6, -20.6, 0.3); add(-2.5, -22.4, 3.1); add(-1.3, -17.4, 1); add(1.2, -24.2, 3); add(2.6, 20.5, 0); add(-2.6, 20.8, 0); add(0, 22.5, 0);
+      add(1.8, 4.5, 1.5); add(-1.8, 6.5, -1.5); add(1.4, -3.5, 0.5); add(-1.4, 10.5, 2);
+      for (let i = spots.length - 1; i > 0; i--) { const j = (rnd() * (i + 1)) | 0; [spots[i], spots[j]] = [spots[j], spots[i]]; }
+      out.crewN = spots.length;
+      spots.forEach(([x, z, yaw], id) => figure(x, deckY(z / HL), z, yaw, id));
+      // gun crews standing beside every second gun (id = 100 + row*32 + port*2 + side)
+      for (const side of [1, -1]) for (let row = 0; row < 2; row++) for (let pi = 0; pi < PORT_Z.length; pi += 2) { const z = PORT_Z[pi] + 1.1, y = PORT_ROWS[row], w = halfWidth(z / HL, y), fy = row === 0 ? FLOORS[2] : FLOORS[1]; figure(side * (w - 2.7), fy, z, side > 0 ? Math.PI / 2 : -Math.PI / 2, 100 + row * 32 + pi * 2 + (side > 0 ? 1 : 0)); }
+    }
     out.ranges.hull = [start, mb.mark() - start];
 
     // ---- masts, yards, sails, flags ----
@@ -223,5 +248,11 @@ const Hull = (() => {
     out.lineVerts = new Float32Array(lv);
     return out;
   }
-  return { MB, L, HL, HB, rim, deckY, keel, halfBeam, halfWidth, bottomY, inside, sec, MASTS, PORT_ROWS, PORT_Z, mastSails, columns, guns, build };
+  function buildFigure() { const mb = new MB(); const o = { crewN: 0 }; // one standalone walking human for players (same parts/animation as the baked crew)
+    const c = 1.0; const f = (x, y0, z, yaw, id) => { mb.uo = [y0, id]; const cc = Math.cos(yaw), sn = Math.sin(yaw); const P = (dx, dy, dz) => [x + dx * cc + dz * sn, y0 + dy, z - dx * sn + dz * cc]; const part = k => id * 8 + k;
+      mb.cyl(P(-0.16, 0.05, 0), P(-0.16, 0.85, 0), 0.11, 0.1, 5, 7, part(0)); mb.cyl(P(0.16, 0.05, 0), P(0.16, 0.85, 0), 0.11, 0.1, 5, 7, part(0)); mb.cyl(P(0, 0.85, 0), P(0, 1.5, 0), 0.24, 0.2, 6, 7, part(1));
+      mb.cyl(P(-0.29, 1.45, 0), P(-0.34, 0.8, 0.12), 0.07, 0.06, 4, 7, part(2)); mb.cyl(P(0.29, 1.45, 0), P(0.36, 0.85, 0.35), 0.07, 0.06, 4, 7, part(2));
+      mb.cyl(P(0, 1.5, 0), P(0, 1.78, 0), 0.13, 0.12, 6, 7, part(3)); mb.cyl(P(0, 1.78, 0), P(0, 1.9, 0), 0.19, 0.12, 6, 7, part(4)); mb.cyl(P(0.36, 0.85, 0.35), P(0.45, 1.5, 0.75), 0.03, 0.02, 4, 7, part(5)); mb.uo = null; };
+    f(0, 0, 0, 0, 0); return { verts: new Float32Array(mb.v), idx: new Uint32Array(mb.i) }; }
+  return { FLOORS, HATCH, floorY, halfW, buildFigure, MB, L, HL, HB, rim, deckY, keel, halfBeam, halfWidth, bottomY, inside, sec, MASTS, PORT_ROWS, PORT_Z, mastSails, columns, guns, build };
 })();

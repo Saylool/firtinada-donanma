@@ -14,7 +14,7 @@
   const orbit = { yaw: 0.6, pitch: 0.22, dist: 120 }, chase = { yawOff: 0, pitch: 0.3, dist: 100, idle: 0 };
   const cine = { t: 99, shot: 0, ship: 0, a: 0, rate: 0.04, R: 300, H: 50, wide: true, next: 12 };
   const state = { fps: 60, uiT: 0 };
-  const inp = { rud: 0, sail: 1, fire: false, clickT: 0 };
+  const inp = { rud: 0, sail: 1, fire: false, mouse: false };
   const keys = {};
   let env = Weather.env();
 
@@ -67,19 +67,21 @@
     world.setup(seed, G.perTeam, undefined, roster);
     world.windSpeed = env.wind; Waves.setAmp(env.amp, env.sharp);
     fx.ps.length = 0; G.snaps.length = 0; G.my = null; focus = 0; cine.t = 99; G.fleetN = -1;
-    world.ships.forEach(s => { if (slotOf(s)) { G.my = s; G.slot = slotOf(s); } for (const id of [s.helm, s.gun]) if (id && id !== 'local') { const p = G.players.get(id); if (p) p.ship = s; } });
+    G.ch = null; world.ships.forEach(s => { if (slotOf(s)) { G.my = s; G.slot = slotOf(s); G.ch = attachChar(s, 'local'); } for (const id of [s.helm, s.gun]) if (id && id !== 'local') { const p = G.players.get(id); if (p) p.ship = s; } });
     afterSetup(); $('banner').classList.remove('show');
   }
   function afterSetup() {
     buildFleetUI(); const me = G.my;
-    $('pl').style.display = me ? 'block' : 'none'; $('reticle').style.display = 'none'; document.body.classList.toggle('playing', !!me);
-    if (me) { setRoleHint(); camMode = 'player'; chase.yawOff = 0; chase.dist = 105 * me.s + 40; $('plName').textContent = me.name; $('plCls').textContent = me.cls.name; }
+    $('pl').style.display = me ? 'block' : 'none'; document.body.classList.toggle('playing', !!me);
+    if (me) { setRoleHint(); camMode = 'fps'; chase.yawOff = 0; chase.dist = 105 * me.s + 40; $('plName').textContent = me.name; $('plCls').textContent = me.cls.name; }
     else if (camMode === 'player') camMode = 'cine';
     buildCamBtns(); $('tsl').style.display = G.role === 'solo' || G.role === 'spectate' ? '' : 'none';
     updateRoomUI();
   }
   function setRoleHint() {
-    const h = { both: '<b>A/D</b> dümen · <b>W/S</b> yelken · <b>F</b> abordaj · <b>Boşluk / tık</b> ateş (fareyle nişan) · sürükle: kamera', helm: '<b>Dümenci:</b> <b>A/D</b> dümen · <b>W/S</b> yelken · <b>F</b> abordaj (toplar topçuda / yapay zekâda)', gun: '<b>Topçu:</b> fareyle nişan · <b>Boşluk / tık</b> ateş (dümeni arkadaşın / yapay zekâ kullanır)' };
+    const h = { both: '<b>W A S D</b> yürü · <b>fare</b> bak · <b>E</b> dümene geç / merdiven (inmek) · <b>Q</b> merdiven (çıkmak) · top başında <b>Boşluk / tık</b> ateş · dümende <b>A/D</b> dümen, <b>W/S</b> yelken, <b>F</b> abordaj',
+      helm: '<b>Dümenci:</b> kıçtaki dümene git, <b>E</b> ile geç · <b>A/D</b> dümen · <b>W/S</b> yelken · <b>F</b> abordaj. Toplara dokunamazsın.',
+      gun: '<b>Topçu:</b> ambarın merdivenine git (<b>E</b> in), bir topun başına geç, bakışınla topu doğrult (nişangâh yok, gözle), <b>Boşluk / tık</b> ateş.' };
     $('plHint').innerHTML = h[G.slot || 'both'];
   }
   function humansFromWorld() { return world.ships.filter(s => s.helm || s.gun).map(s => ({ team: s.team, cls: s.cls.key, name: s.name, helm: s.helm, gun: s.gun, hn: s.hn, gn: s.gn })); }
@@ -169,9 +171,9 @@
       el.querySelector('.dt').textContent = `mürettebat %${Math.round(s.crew * 100)} · direk ${s.masts.filter(m => m.alive).length}/${s.masts.length} · delik ${s.holes.length} · su ${(s.flood / 1e3).toFixed(0)} t`;
     }
   }
-  const camNames = { cine: 'Sinematik', orbit: 'Serbest', player: 'Gemi' };
+  const camNames = { fps: 'Karakter (1. şahıs)', cine: 'Sinematik', orbit: 'Serbest', player: 'Dış görünüm' };
   function buildCamBtns() {
-    const ks = G.my ? ['player', 'cine', 'orbit'] : ['cine', 'orbit'];
+    const ks = G.my ? ['fps', 'player', 'cine'] : ['cine', 'orbit'];
     $('camBtns').innerHTML = ks.map(k => `<button data-cam="${k}" class="${k === camMode ? 'on' : ''}">${camNames[k]}</button>`).join(' ');
     $('camBtns').querySelectorAll('button').forEach(b => b.onclick = () => setCam(b.dataset.cam));
   }
@@ -206,7 +208,18 @@
     const cnt = [0, 0, 0, 0]; for (const g of s.guns) { const i = g.side > 0 ? 0 : 1; cnt[i + 2]++; if (g.t <= 0) cnt[i]++; }
     $('plGuns').textContent = `◄ ${cnt[0]}/${cnt[2]} · ${cnt[1]}/${cnt[3]} ►`; $('plCrew').style.width = s.crew * 100 + '%';
     let near = null, nd = 1e9; for (const e of world.ships) { if (e.team === s.team || e.sunk || e.dead) continue; const d = Math.hypot(e.com[0] - s.com[0], e.com[2] - s.com[2]); if (d < nd) { nd = d; near = e; } }
-    const hint = $('plBoard'); if (s.board != null) { const o = world.ships[s.board]; hint.textContent = `⚔ ABORDAJ — düşman mürettebatı %${o ? Math.round(o.crew * 100) : 0} (F: halatları kes)`; hint.style.display = 'block'; } else if (near && nd < 46 * Math.max(s.s, near.s) && G.slot !== 'gun') { hint.textContent = `F: ${near.name} gemisine abordaj (mürettebat %${Math.round(near.crew * 100)})`; hint.style.display = 'block'; } else hint.style.display = 'none';
+    const hint = $('plBoard'); const ch = G.ch, slot = G.slot || 'both'; let pr = '';
+    if (s.board != null) { const o = world.ships[s.board]; pr = `⚔ ABORDAJ — düşman mürettebatı %${o ? Math.round(o.crew * 100) : 0}${ch && ch.mode === 1 ? ' (F: halatları kes)' : ''}`; }
+    else if (ch && !ch.climb && !s.sunk) {
+      const wp = Char.wheelPos(s), lp = Char.ladderPos(s);
+      if (ch.mode === 1) pr = 'Dümendesin — A/D dümen · W/S yelken · F abordaj (en yakın düşman gemisi) · E: dümeni bırak';
+      else if (ch.lvl === 0 && Char.near(ch, wp, 2.6)) pr = slot === 'gun' ? 'Dümen seninle değil' : 'E: dümene geç';
+      else if (Char.near(ch, lp, 2.2)) pr = ch.lvl === 0 ? 'E: ambara in (top güverteleri)' : ch.lvl === 1 ? 'E: alt güverteye in · Q: yukarı çık' : 'Q: yukarı çık';
+      else if (G.nearGun >= 0) { const g = s.guns[G.nearGun]; pr = slot === 'helm' ? 'Toplara dokunamazsın — sen dümencisin' : g.t > 0 ? `Top yükleniyor… ${Math.ceil(g.t)} sn` : 'Top hazır — bakışınla doğrult, Boşluk / tık: ateş'; }
+      else if (ch.lvl > 0 && slot !== 'helm') pr = 'Bir topun başına git (borda kenarı)';
+      else if (ch.lvl === 0 && slot !== 'helm') pr = 'Topçu: merdivenden ambara in (E) — toplar aşağıda';
+    }
+    if (pr) { hint.textContent = pr; hint.style.display = 'block'; } else hint.style.display = 'none';
     if (s.sunk || s.captured) { G.respawnT += 0.2; if (G.respawnT > 6 && !$('banner').classList.contains('show')) { const b2 = $('banner'); b2.innerHTML = (s.captured ? 'Geminiz ele geçirildi' : 'Geminiz battı') + '<br><span style="font-size:16px;font-weight:400">R tuşu: yeni gemi ile yeniden katıl</span>'; b2.classList.add('show'); } } else G.respawnT = 0;
   }
 
@@ -246,20 +259,22 @@
       }
       if (s) { s[slot] = peer; s[slot === 'helm' ? 'hn' : 'gn'] = name; s.human = s.helm || s.gun; }
       else { const team = pickTeam(pref); s = world.addShip(humanEntry(peer, name, cls, team, slot)); isNew = true; }
-      G.players.set(peer, { ship: s, name, slot });
+      G.players.set(peer, { ship: s, name, slot }); s.chars = s.chars || {}; s.chars[peer] = Char.make(s);
       Net.send(Net.conns.get(peer), initMsg(peer));
       for (const [p2, c] of Net.conns) if (p2 !== peer) Net.send(c, isNew ? { t: 'add', id: s.id, e: shipEntry(s) } : slotMsg(s));
       feed(isNew ? `${name} katıldı (${teamName(s.team)})` : `${name}, ${s.name} gemisine ${slot === 'helm' ? 'dümenci' : 'topçu'} olarak bindi`, teamCol(s.team)); if (isNew) balanceTeams(); buildFleetUI(); updateRoomUI();
     } else if (d.t === 'in') {
-      const p = G.players.get(peer); if (!p || !p.ship) return; const sh = p.ship;
-      if (sh.helm === peer) { const c = sh.ctrlH || (sh.ctrlH = { rud: 0, sail: 1, board: false }); c.rud = clamp(+d.r || 0, -1, 1); c.sail = clamp(+d.s, 0, 1); c.board = c.board || !!d.b; }
-      if (sh.gun === peer) sh.ctrlG = { fire: !!d.f, aim: Array.isArray(d.a) && d.a.length === 3 ? d.a.map(Number) : null };
+      const p = G.players.get(peer); if (!p || !p.ship) return; const sh = p.ship; sh.chars = sh.chars || {}; const c = Array.isArray(d.c) ? d.c : null;
+      let ch = sh.chars[peer]; if (!ch) ch = sh.chars[peer] = Char.make(sh);
+      if (c) { ch.x = +c[0] || 0; ch.z = +c[1] || 0; ch.lvl = c[2] | 0; ch.yaw = +c[3] || 0; ch.pitch = +c[4] || 0; ch.mode = c[5] | 0; ch.moving = +c[6] || 0; ch.gi = c[7] | 0; ch.eyeY = Char.floorY(ch) + Char.EYE * sh.s; }
+      if (sh.helm === peer) { const k = sh.ctrlH || (sh.ctrlH = { rud: 0, sail: 1, board: false, atHelm: false }); k.rud = clamp(+d.r || 0, -1, 1); k.sail = clamp(+d.s, 0, 1); k.atHelm = ch.mode === 1; k.board = k.board || !!d.b; }
+      if (sh.gun === peer) { const g = sh.guns[ch.gi]; sh.ctrlG = { fire: !!d.f && !!g, gi: ch.gi, dl: g ? Char.gunDir(ch, g) : null }; }
     } else if (d.t === 'respawn') {
       const p = G.players.get(peer); if (!p || !p.ship || !(p.ship.sunk || p.ship.captured)) return; respawn(peer, SHIP_CLASSES[d.cls] ? d.cls : p.ship.cls.key);
     } else if (d.t === 'resync') Net.send(Net.conns.get(peer), initMsg(peer));
   }
   function hostLeave(peer) {
-    const p = G.players.get(peer); if (p && p.ship) { const sh = p.ship; if (sh.helm === peer) { sh.helm = null; sh.hn = ''; } if (sh.gun === peer) { sh.gun = null; sh.gn = ''; } sh.human = sh.helm || sh.gun; feed(`${p.name} ayrıldı — görevi yapay zekâya devredildi`); Net.broadcast(slotMsg(sh)); }
+    const p = G.players.get(peer); if (p && p.ship) { const sh = p.ship; if (sh.helm === peer) { sh.helm = null; sh.hn = ''; } if (sh.gun === peer) { sh.gun = null; sh.gn = ''; } if (sh.chars) delete sh.chars[peer]; sh.human = sh.helm || sh.gun; feed(`${p.name} ayrıldı — görevi yapay zekâya devredildi`); Net.broadcast(slotMsg(sh)); }
     G.players.delete(peer); buildFleetUI(); updateRoomUI();
   }
   function balanceTeams() {
@@ -277,7 +292,7 @@
     const old = id === 'local' ? G.my : (G.players.get(id) || {}).ship; if (!old) return;
     const slot = old.helm === id && old.gun === id ? 'both' : old.helm === id ? 'helm' : 'gun';
     const s = world.addShip(humanEntry(id, old.name, cls, old.team, slot)); if (old.helm === id) old.helm = null; if (old.gun === id) old.gun = null; old.human = old.helm || old.gun;
-    if (id === 'local') { G.my = s; G.slot = slot; document.body.classList.add('playing'); camMode = 'player'; buildCamBtns(); $('banner').classList.remove('show'); $('plCls').textContent = s.cls.name; setRoleHint(); } else G.players.get(id).ship = s;
+    if (id === 'local') { G.my = s; G.slot = slot; G.ch = attachChar(s, 'local'); document.body.classList.add('playing'); camMode = 'fps'; buildCamBtns(); $('banner').classList.remove('show'); $('plCls').textContent = s.cls.name; setRoleHint(); } else G.players.get(id).ship = s;
     if (G.role === 'host') { Net.broadcast({ t: 'add', id: s.id, e: shipEntry(s) }); Net.broadcast(slotMsg(old)); if (id !== 'local') Net.send(Net.conns.get(id), { t: 'you', si: s.id, slot }); }
     buildFleetUI(); flashMsg('Yeni gemi denize indi');
   }
@@ -288,6 +303,7 @@
     const ps = G.players.get(peer);
     return { t: 'init', seed: world.seed, wa: world.wa, weather: Weather.key, auto: Weather.auto, roster, my: ps && ps.ship ? ps.ship.id : -1, slot: ps ? ps.slot : null, wt: world.t, holes, sholes, gseed: G.seed };
   }
+  const slotMask = s => (s.helm === 'local' && s.gun === 'local' ? 3 : s.helm === 'local' ? 1 : s.gun === 'local' ? 2 : 0);
   let snapAcc = 0;
   function encShip(s) {
     const o = s.toWorld([0, 0, 0]), q = s.q, gr = [0, 0, 0, 0]; for (const g of s.guns) { const i = g.side > 0 ? 0 : 1; gr[i + 2]++; if (g.t <= 0) gr[i]++; }
@@ -300,6 +316,7 @@
     const ds = world.debris.slice().sort((a, b) => a.age - b.age).slice(0, 70);
     const msg = { t: 'snap', tt: r3(world.t), ships: world.ships.map(encShip), balls: world.balls.slice(0, 80).map(b => [r1(b.p[0]), r1(b.p[1]), r1(b.p[2]), r1(b.v[0]), r1(b.v[1]), r1(b.v[2])]),
       deb: ds.map(d => { const o = d.toWorld([0, 0, 0]); return [d.id, d.kind === 'mast' ? 1 : 0, r1(o[0]), r1(o[1]), r1(o[2]), r3(d.q[0]), r3(d.q[1]), r3(d.q[2]), r3(d.q[3]), r2(d.size[0]), r2(d.size[1]), r2(d.size[2]), r2(d.scale || 1), d.mastOf || 0]; }),
+      ch: world.ships.flatMap(s => Object.keys(s.chars || {}).map(id => { const c = s.chars[id], m = id === s.helm && id === s.gun ? 3 : id === s.helm ? 1 : id === s.gun ? 2 : (id === 'local' ? slotMask(s) : 0); return m ? [s.id, m, r2(c.x), r2(c.z), c.lvl, r2(c.yaw), c.mode, r1(c.moving || 0), r2(c.eyeY != null ? c.eyeY : Char.floorY(c) + Char.EYE * s.s)] : null; }).filter(Boolean)),
       ev: G.evq, ov: world.over ? world.winner + 2 : 0 };
     G.evq = []; Net.broadcast(msg);
   }
@@ -312,7 +329,7 @@
     else if (d.t === 'snap') { G.snaps.push({ d, tt: d.tt, recv: performance.now() }); if (G.snaps.length > 8) G.snaps.shift(); G.lastRecv = performance.now(); for (const e of d.ev || []) if (e.k === 'o' || e.k === 'q') applyStateEvent(e); else G.evc.push(e); }
     else if (d.t === 'add') { if (d.id === world.ships.length) { const e = d.e; const s = world.addShip({ team: e.team, cls: e.cls, name: e.name, helm: e.hm & 1 ? 'x' : null, gun: e.hm & 2 ? 'x' : null, hn: e.hn, gn: e.gn, x: e.x, z: e.z, h: e.h }); buildFleetUI(); if (e.hm) feed(`${e.name} savaşa katıldı`, teamCol(e.team)); } else Net.toHost({ t: 'resync' }); }
     else if (d.t === 'slot') { const s = world.ships[d.si]; if (s) { s.helm = d.hm & 1 ? 'x' : null; s.gun = d.hm & 2 ? 'x' : null; s.hn = d.hn; s.gn = d.gn; s.human = s.helm || s.gun; s.team = d.team; } buildFleetUI(); }
-    else if (d.t === 'you') { G.my = world.ships[d.si] || null; G.slot = d.slot; camMode = 'player'; buildCamBtns(); $('banner').classList.remove('show'); document.body.classList.add('playing'); if (G.my) $('plCls').textContent = G.my.cls.name; setRoleHint(); }
+    else if (d.t === 'you') { G.my = world.ships[d.si] || null; G.slot = d.slot; G.ch = G.my ? attachChar(G.my, 'local') : null; camMode = 'fps'; buildCamBtns(); $('banner').classList.remove('show'); document.body.classList.add('playing'); if (G.my) $('plCls').textContent = G.my.cls.name; setRoleHint(); }
     else if (d.t === 'weather') { Weather.auto = d.auto; $('wauto').checked = d.auto; setWeather(d.key, false); }
   }
   function applyInit(m) {
@@ -321,7 +338,7 @@
     world.setup(m.seed, 3, m.wa, roster); world.t = m.wt; world.clientMode = true;
     m.holes.forEach((hs, i) => { const s = world.ships[i]; if (s) s.holes = hs.map(h => ({ p: [h[0], h[1], h[2]], r: h[3], flood: !!h[4] })); });
     m.sholes.forEach((ms, i) => { const s = world.ships[i]; if (s) s.masts.forEach((mm2, j) => { mm2.holes = ms[j] || []; }); });
-    G.my = m.my >= 0 ? world.ships[m.my] : null; G.slot = m.slot; Weather.auto = m.auto; $('wauto').checked = m.auto; setWeather(m.weather, true);
+    G.my = m.my >= 0 ? world.ships[m.my] : null; G.slot = m.slot; G.ch = G.my ? attachChar(G.my, 'local') : null; Weather.auto = m.auto; $('wauto').checked = m.auto; setWeather(m.weather, true);
     fx.ps.length = 0; afterSetup(); closeMenu(); mstat(''); flashMsg(G.my ? 'Savaşa katıldın — ' + teamName(G.my.team) : 'Savaş izleniyor');
     $('tsl').style.display = 'none'; $('wsel').disabled = true; $('wauto').disabled = true;
   }
@@ -359,6 +376,11 @@
       s.fires = n[23].map(z => ({ p: [z[0], z[1], z[2]], t: z[3] })); s.stats.hits = n[25]; s.stats.shots = n[26]; s.crew = n[27]; s.board = n[28] < 0 ? null : n[28]; s.team = n[29]; s.captured = !!n[30];
       const cnt = [0, 0]; s.guns.forEach(g => { const i = g.side > 0 ? 0 : 1; if (cnt[i] >= n[24][i]) g.t = 1; else { g.t = 0; cnt[i]++; } });
     }
+    { const mine = G.my ? (G.slot === 'both' ? 3 : G.slot === 'helm' ? 1 : 2) : 0; const seen = new Set();
+      for (const c of last.d.ch || []) { const sh = world.ships[c[0]]; if (!sh || (sh === G.my && c[1] === mine)) continue; sh.chars = sh.chars || {}; const key = 'r' + c[1]; seen.add(sh.id + key);
+        let ch = sh.chars[key]; if (!ch) { ch = sh.chars[key] = Char.make(sh); ch.x = c[2]; ch.z = c[3]; ch.eyeY = c[8]; }
+        ch.x += (c[2] - ch.x) * 0.4; ch.z += (c[3] - ch.z) * 0.4; ch.lvl = c[4]; ch.yaw = c[5]; ch.mode = c[6]; ch.moving = c[7]; ch.eyeY += (c[8] - ch.eyeY) * 0.3; }
+      for (const sh of world.ships) if (sh.chars) for (const k of Object.keys(sh.chars)) if (k[0] === 'r' && !seen.has(sh.id + k)) delete sh.chars[k]; }
     const dtl = Math.min(0.25, (performance.now() - last.recv) / 1000);
     world.balls = last.d.balls.map(b => ({ p: [b[0] + b[3] * dtl, b[1] + b[4] * dtl, b[2] + b[5] * dtl], v: [b[3], b[4], b[5]] }));
     const seen = new Set(); world.debris.length = 0;
@@ -375,63 +397,65 @@
   // ------------------------------------------------------------------ input
   const isTyping = () => document.activeElement && /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName);
   let drag = null;
-  function aimRay(mx, my) {
-    const a = canvas.clientWidth / canvas.clientHeight, t = Math.tan(cam.fov / 2), v = M4.lookAt(cam.pos, cam.target, [0, 1, 0]);
-    const nx = mx / canvas.clientWidth * 2 - 1, ny = 1 - my / canvas.clientHeight * 2;
-    return { o: cam.pos, d: V3.norm([v.fwd[0] + nx * t * a * v.right[0] + ny * t * v.up[0], v.fwd[1] + nx * t * a * v.right[1] + ny * t * v.up[1], v.fwd[2] + nx * t * a * v.right[2] + ny * t * v.up[2]]) };
-  }
-  function computeAim() {
-    const me = G.my; if (!me || me.dead || !G.mouse) { G.aim = null; return; }
-    const ray = aimRay(G.mouse.x, G.mouse.y); let aim = null;
-    let bd = 1e9, bs = null;
-    for (const s of world.ships) {
-      if (s.team === me.team || s.sunk || s.dead) continue; const c = [s.com[0], s.com[1] + 5 * s.s, s.com[2]];
-      const w = V3.sub(c, ray.o), t = V3.dot(w, ray.d); if (t < 20) continue; const d = V3.len(V3.sub(w, V3.scale(ray.d, t)));
-      if (d < 20 * s.s + 6 && t < bd) { bd = t; bs = s; }
-    }
-    if (bs) { const rng = Math.hypot(bs.com[0] - me.com[0], bs.com[2] - me.com[2]); aim = [bs.com[0] + bs.vel[0] * rng / 300, bs.com[1] + 1.5 * bs.s, bs.com[2] + bs.vel[2] * rng / 300]; G.aimShip = bs; }
-    else { G.aimShip = null; if (ray.d[1] < -0.005) { const t = -ray.o[1] / ray.d[1]; aim = [ray.o[0] + ray.d[0] * t, 0, ray.o[2] + ray.d[2] * t]; } else aim = [ray.o[0] + ray.d[0] * 700, 0, ray.o[2] + ray.d[2] * 700]; }
-    G.aim = aim;
-  }
-  canvas.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY, moved: 0 }; canvas.setPointerCapture(e.pointerId); snd.init(); });
-  canvas.addEventListener('pointerup', () => { if (drag && drag.moved < 6 && G.my) inp.clickT = 0.45; drag = null; });
+  const locked = () => document.pointerLockElement === canvas;
+  function look(dx, dy) { const ch = G.ch; if (!ch) return; ch.yaw -= dx * 0.0024; ch.pitch = clamp(ch.pitch - dy * 0.0024, -1.35, 1.35); if (ch.mode === 1) ch.yaw = clamp(ch.yaw, -2.6, 2.6); else ch.yaw = Math.atan2(Math.sin(ch.yaw), Math.cos(ch.yaw)); }
+  canvas.addEventListener('pointerdown', e => {
+    drag = { x: e.clientX, y: e.clientY, moved: 0 }; inp.mouse = true; snd.init();
+    if (camMode === 'fps' && G.my && !menuOpen && !locked() && canvas.requestPointerLock) { try { canvas.requestPointerLock(); } catch (er) { /* headless / denied */ } }
+    else canvas.setPointerCapture(e.pointerId);
+  });
+  canvas.addEventListener('pointerup', () => { drag = null; inp.mouse = false; });
   canvas.addEventListener('pointermove', e => {
-    G.mouse = { x: e.clientX, y: e.clientY }; if (!drag) return;
-    const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.x = e.clientX; drag.y = e.clientY; drag.moved += Math.abs(dx) + Math.abs(dy); if (drag.moved < 6) return;
+    G.mouse = { x: e.clientX, y: e.clientY };
+    if (locked() && camMode === 'fps') { look(e.movementX, e.movementY); return; }
+    if (!drag) return;
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.x = e.clientX; drag.y = e.clientY; drag.moved += Math.abs(dx) + Math.abs(dy);
+    if (camMode === 'fps') { look(dx, dy); return; }
+    if (drag.moved < 6) return;
     if (camMode === 'cine') setCam(G.my ? 'player' : 'orbit');
     if (camMode === 'player') { chase.yawOff -= dx * 0.005; chase.pitch = clamp(chase.pitch + dy * 0.004, 0.03, 1.3); chase.idle = 0; }
     else { orbit.yaw -= dx * 0.005; orbit.pitch = clamp(orbit.pitch + dy * 0.004, -0.05, 1.4); }
   });
-  canvas.addEventListener('wheel', e => { e.preventDefault(); if (camMode === 'cine') setCam(G.my ? 'player' : 'orbit'); if (camMode === 'player') chase.dist = clamp(chase.dist * Math.exp(e.deltaY * 0.001), 30, 500); else orbit.dist = clamp(orbit.dist * Math.exp(e.deltaY * 0.001), 25, 900); }, { passive: false });
+  canvas.addEventListener('wheel', e => { e.preventDefault(); if (camMode === 'fps') return; if (camMode === 'cine') setCam(G.my ? 'player' : 'orbit'); if (camMode === 'player') chase.dist = clamp(chase.dist * Math.exp(e.deltaY * 0.001), 30, 500); else orbit.dist = clamp(orbit.dist * Math.exp(e.deltaY * 0.001), 25, 900); }, { passive: false });
+  document.addEventListener('pointerlockchange', () => { if (!locked() && camMode === 'fps' && G.my && !menuOpen) flashMsg('Fare serbest — tıklayınca tekrar kilitlenir'); });
+  function useKey(dir) {
+    const ch = G.ch, me = G.my; if (!ch || !me) return; const slot = G.slot || 'both';
+    if (dir > 0 && ch.mode === 0 && ch.lvl === 0 && Char.near(ch, Char.wheelPos(me), 2.6) && slot === 'gun') { flashMsg('Dümen seninle değil — sen topçusun'); return; }
+    const msg = Char.use(ch, dir); if (msg) flashMsg(msg);
+  }
   addEventListener('keydown', e => {
     if (isTyping()) return; snd.init(); const k = e.key.toLowerCase(); keys[k] = true;
     if (e.key >= '1' && e.key <= '9' && !G.my) { const i = +e.key - 1; if (world.ships[i]) { focus = i; if (camMode === 'cine') setCam('orbit'); flashMsg(world.ships[i].name); } }
-    else if (k === 'c') { const ks = G.my ? ['player', 'cine', 'orbit'] : ['cine', 'orbit']; setCam(ks[(ks.indexOf(camMode) + 1) % ks.length]); }
+    else if (k === 'c') { const ks = G.my ? ['fps', 'player', 'cine'] : ['cine', 'orbit']; setCam(ks[(ks.indexOf(camMode) + 1) % ks.length]); }
     else if (k === ' ') { e.preventDefault(); if (!G.my && isSim() && G.role !== 'host') { paused = !paused; flashMsg(paused ? 'Duraklatıldı' : 'Devam'); } }
     else if (k === 'r') { if (G.my && (G.my.sunk || G.my.captured)) { if (G.role === 'client') Net.toHost({ t: 'respawn', cls: G.cls }); else respawn('local', G.cls); } else if (G.role === 'spectate' || G.role === 'solo') nextBattle(); }
-    else if (k === 'f') { if (G.my && G.slot !== 'gun') inp.board = true; }
+    else if (k === 'e') useKey(1); else if (k === 'q') useKey(-1);
+    else if (k === 'f') { if (G.my && G.slot !== 'gun') { if (G.ch && G.ch.mode === 1) inp.board = true; else flashMsg('Abordaj emri için dümende olmalısın (E)'); } }
     else if (k === 'h') $('hud').classList.toggle('hide'); else if (k === 'm') (menuOpen ? closeMenu() : openMenu());
     else if ((k === '+' || k === '=') && G.role !== 'host' && !isNet()) { timeScale = Math.min(6, timeScale * 1.5); flashMsg('Hız ×' + timeScale.toFixed(1)); }
     else if (k === '-' && G.role !== 'host' && !isNet()) { timeScale = Math.max(0.25, timeScale / 1.5); flashMsg('Hız ×' + timeScale.toFixed(1)); }
   });
   addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+  // characters: walking, wheel, guns
+  function attachChar(ship, id) { ship.chars = ship.chars || {}; const ch = Char.make(ship); ship.chars[id] = ch; return ch; }
   function readInput(dt) {
-    const me = G.my; if (!me) { $('reticle').style.display = 'none'; return; }
-    const slot = G.slot || 'both', hasH = slot !== 'gun', hasG = slot !== 'helm';
-    inp.rud = (keys['a'] || keys['arrowleft'] ? 1 : 0) - (keys['d'] || keys['arrowright'] ? 1 : 0);
-    if (keys['w'] || keys['arrowup']) inp.sail = Math.min(1, inp.sail + dt * 0.6); if (keys['s'] || keys['arrowdown']) inp.sail = Math.max(0, inp.sail - dt * 0.6);
-    inp.clickT = Math.max(0, inp.clickT - dt); inp.fire = hasG && (!!keys[' '] || inp.clickT > 0);
-    if (hasG) computeAim(); else G.aim = null;
-    if (G.role === 'client') { G.inT = (G.inT || 0) - dt; if (G.inT <= 0 || inp.board) { G.inT = 0.05; Net.toHost({ t: 'in', r: inp.rud, s: r2(inp.sail), f: inp.fire ? 1 : 0, a: G.aim ? G.aim.map(r1) : null, b: inp.board ? 1 : 0 }); inp.board = false; } }
+    const me = G.my, ch = G.ch; if (!me || !ch || ch.ship !== me) return;
+    const slot = G.slot || 'both', hasH = slot !== 'gun', hasG = slot !== 'helm', dead = me.sunk || me.captured || menuOpen;
+    const atHelm = ch.mode === 1;
+    const fwd = (keys['w'] || keys['arrowup'] ? 1 : 0) - (keys['s'] || keys['arrowdown'] ? 1 : 0), str = (keys['d'] || keys['arrowright'] ? 1 : 0) - (keys['a'] || keys['arrowleft'] ? 1 : 0);
+    if (atHelm) { inp.rud = -str; if (fwd > 0) inp.sail = Math.min(1, inp.sail + dt * 0.6); if (fwd < 0) inp.sail = Math.max(0, inp.sail - dt * 0.6); }
+    else inp.rud = 0;
+    if (!dead && camMode !== 'cine') Char.step(ch, atHelm ? { fwd: 0, strafe: 0 } : { fwd, strafe: str, run: !!keys['shift'] }, dt); else Char.step(ch, { fwd: 0, strafe: 0 }, dt);
+    ch.gi = hasG ? Char.nearestGun(ch) : -1;
+    inp.fire = hasG && !dead && ch.gi >= 0 && (!!keys[' '] || inp.mouse);
+    G.nearGun = ch.gi;
+    const dl = ch.gi >= 0 ? Char.gunDir(ch, me.guns[ch.gi]) : null;
+    if (G.role === 'client') { G.inT = (G.inT || 0) - dt; if (G.inT <= 0 || inp.board) { G.inT = 0.05; Net.toHost({ t: 'in', c: [r2(ch.x), r2(ch.z), ch.lvl, r3(ch.yaw), r3(ch.pitch), ch.mode, r1(ch.moving), ch.gi], r: inp.rud, s: r2(inp.sail), f: inp.fire ? 1 : 0, b: inp.board ? 1 : 0 }); inp.board = false; } }
     else {
-      if (hasH) { const c = me.ctrlH || (me.ctrlH = { rud: 0, sail: 1, board: false }); c.rud = inp.rud; c.sail = inp.sail; if (inp.board) { c.board = true; inp.board = false; } }
-      if (hasG) me.ctrlG = { fire: inp.fire, aim: G.aim };
+      me.chars = me.chars || {}; me.chars.local = ch;
+      if (hasH) { const c = me.ctrlH || (me.ctrlH = { rud: 0, sail: 1, board: false, atHelm: false }); c.rud = inp.rud; c.sail = inp.sail; c.atHelm = atHelm && !dead; if (inp.board) { c.board = true; inp.board = false; } }
+      if (hasG) me.ctrlG = { fire: inp.fire, gi: ch.gi, dl };
     }
-    const rt = $('reticle'); if (hasG && G.aim && G.mouse && !menuOpen && !me.sunk && !me.captured) {
-      const rng = Math.hypot(G.aim[0] - me.com[0], G.aim[2] - me.com[2]); const n = world.fireAt(me, G.aim, 0, 900, true);
-      rt.style.display = 'block'; rt.style.left = G.mouse.x + 'px'; rt.style.top = G.mouse.y + 'px'; rt.classList.toggle('ok', n > 0);
-      rt.querySelector('span').textContent = `${rng.toFixed(0)} m · ${n} top${G.aimShip ? ' · ' + G.aimShip.name : ''}`;
-    } else rt.style.display = 'none';
   }
 
   // ------------------------------------------------------------------ camera
@@ -439,7 +463,13 @@
   function fleetCenter() { const l = aliveShips(); const a = l.length ? l : world.ships; const c = [0, 0, 0]; if (!a.length) return c; a.forEach(s => { c[0] += s.com[0]; c[2] += s.com[2]; }); c[0] /= a.length; c[2] /= a.length; return c; }
   function updateCamera(dt) {
     if (camMode === 'manual') return;
-    if (camMode === 'player' && (!G.my || G.my.dead)) camMode = 'cine';
+    if ((camMode === 'player' || camMode === 'fps') && (!G.my || G.my.dead)) camMode = 'cine';
+    if (camMode === 'fps' && G.my.sunk && G.respawnT > 3) { camMode = 'cine'; buildCamBtns(); }
+    if (camMode === 'fps' && G.ch && G.ch.ship === G.my) {
+      const s = G.my, ch = G.ch, e = s.toWorld(Char.eyeLocal(ch)), cp = Math.cos(ch.pitch), dw = M3.mulV(s.R, [cp * Math.sin(ch.yaw), Math.sin(ch.pitch), cp * Math.cos(ch.yaw)]);
+      cam.pos = e; cam.target = [e[0] + dw[0] * 10, e[1] + dw[1] * 10, e[2] + dw[2] * 10]; cam.up = [s.R[1], s.R[4], s.R[7]]; cam.near = 0.12; cam.fov = 72 * Math.PI / 180; return;
+    }
+    cam.up = null; cam.near = 0.4; cam.fov = 58 * Math.PI / 180;
     let des = cam.pos, tgt = cam.target, k = 2.2;
     if (camMode === 'cine') {
       cine.t += dt;
@@ -476,7 +506,7 @@
   const STEP = 1 / 120; let acc = 0, last = performance.now(), fpsAcc = 0, fpsN = 0;
   function frameData() {
     const t = world.t, e = env;
-    return { world, fx, cam, env: e, time: t, width: Math.floor(canvas.clientWidth * Math.min(devicePixelRatio, cfg.dpr) * cfg.scale), height: Math.floor(canvas.clientHeight * Math.min(devicePixelRatio, cfg.dpr) * cfg.scale),
+    return { world, fx, cam, env: e, fps: camMode === 'fps', localChar: G.ch, time: t, width: Math.floor(canvas.clientWidth * Math.min(devicePixelRatio, cfg.dpr) * cfg.scale), height: Math.floor(canvas.clientHeight * Math.min(devicePixelRatio, cfg.dpr) * cfg.scale),
       sunDir: e.sunDir, sunCol: e.sun, flash: fx.flash, flashDir: fx.flashDir, cloudOff: [world.windDir[0] * t * 0.0045 * (0.4 + e.wind / 22) + 3.1, world.windDir[1] * t * 0.0045 * (0.4 + e.wind / 22) + 1.7],
       fogD: e.fog, rain: Math.floor(e.rain), bolt: fx.bolt && fx.bolt.a > 0.02 ? fx.bolt : null, lights: fx.packLights(cam.pos) };
   }
