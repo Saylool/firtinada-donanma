@@ -160,7 +160,7 @@ void main(){
 }`;
 SH.shipFS = HEAD + SH.noise + SH.shadow + Waves.glsl + SH.env + `
 in vec3 vPos; in vec3 vW; in vec3 vN; in vec2 vUV; flat in float vMat; flat in float vEx; out vec4 oCol;
-uniform float uRows,uCrewN,uCrewF,uInside; uniform vec2 uPZ; uniform vec3 uHullCol,uStripeCol,uTeamCol; uniform vec4 uHole[24]; uniform int uHoleN; uniform vec4 uSHole[10]; uniform int uSHoleN; uniform float uBillow,uMirror; uniform int uKind;
+uniform float uRows,uCrewN,uCrewF,uInside,uWeapon; uniform vec2 uPZ; uniform vec3 uHullCol,uStripeCol,uTeamCol; uniform vec4 uHole[24]; uniform int uHoleN; uniform vec4 uSHole[10]; uniform int uSHoleN; uniform float uBillow,uMirror; uniform int uKind;
 vec3 bumpN(vec3 N,float h,float k){ vec3 dpx=dFdx(vW),dpy=dFdy(vW); float hx=dFdx(h),hy=dFdy(h); vec3 r1=cross(dpy,N),r2=cross(N,dpx); float det=dot(dpx,r1); vec3 g=sign(det)*(hx*r1+hy*r2); return normalize(abs(det)*N-k*g); }
 float ridge(float x,float w){ return ss(w,0.,abs(x)); }
 void main(){
@@ -219,8 +219,9 @@ void main(){
     // seams
     alb*=1.-.35*ridge(fract(P.x*.11+.5)-.0,.02); N=bumpN(N,fbm(P.xy*1.3,3)*.6+sin(P.x*9.+fbm(P.xy*.6,2)*6.)*.15,.03);
   } else if(m==7){ float id=floor(vEx/8.); float part=vEx-id*8.; if(id<100.&&id>=uCrewN) discard; if(id>=100.){ float g=id-100.; float row=floor(g/32.); float pi=floor((g-row*32.)/2.); float zz=-17.+4.*pi; if(row>uRows-.5||zz<uPZ.x+1.9||zz>uPZ.y-1.9||hash21(vec2(id,4.))>uCrewF*1.25) discard; }
-    if(part<.5) alb=vec3(.10,.09,.09); else if(part<1.5||part<2.5) alb=mix(uTeamCol*.5,vec3(.55,.5,.42),step(.5,fract(hash21(vec2(id,3.))*3.))*step(1.5,part)*.0); else if(part<3.5) alb=vec3(.72,.52,.40); else if(part<4.5) alb=vec3(.04); else { alb=vec3(.72,.75,.8); spec=.9; shin=80.; }
+    if(part<.5) alb=vec3(.10,.09,.09); else if(part<1.5||part<2.5) alb=mix(uTeamCol*.5,vec3(.55,.5,.42),step(.5,fract(hash21(vec2(id,3.))*3.))*step(1.5,part)*.0); else if(part<3.5) alb=vec3(.72,.52,.40); else if(part<4.5) alb=vec3(.04); else if(part<5.5){ if(uWeapon<1.5) discard; alb=vec3(.72,.75,.8); spec=.9; shin=80.; } else { if(uWeapon<.5||uWeapon>1.5) discard; alb=vec3(.22,.14,.08); spec=.3; }
     if(part<3.5&&part>1.5&&part<2.5) alb=uTeamCol*.5; spec=max(spec,.08);
+  } else if(m==8){ float e=vEx; if(e<.5) alb=uTeamCol*.55; else if(e<1.5) alb=vec3(.72,.52,.4); else if(e<2.5){ alb=vec3(.75,.78,.82); spec=.9; shin=70.; } else if(e<3.5) alb=vec3(.23,.14,.08); else { alb=vec3(.78,.56,.14); spec=.9; shin=60.; }
   } else if(m==3){
     float g=vnoise(vec2(P.y*1.2+P.x*3.,P.z*3.+P.x*2.)); alb=vec3(.16,.10,.06)*(.65+.7*g); spec=.12;
   } else if(m==4){ alb=vec3(.78,.55,.10); spec=.9; shin=90.; }

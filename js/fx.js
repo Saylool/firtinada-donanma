@@ -34,6 +34,15 @@ class FX {
       this.P(0, p, [sv[0] * 0.6 + (r() - 0.5) * 2, 1.5, sv[2] * 0.6 + (r() - 0.5) * 2], 0.35, 0.8, 2 + r() * 1.5, [0.32, 0.32, 0.33], 0.3, { drag: 1, wind: 0.6 });
     }
   }
+  // a musket shot: flash + smoke at the muzzle, a streak along the path, sparks / splash where it lands
+  tracer(p0, p1, hit) {
+    const r = this.rnd, d = V3.sub(p1, p0), L = V3.len(d) || 1, n = Math.min(14, (L / 6) | 0);
+    this.P(1, p0, [0, 0, 0], 0.45, 2, 0.09, [5, 3.4, 1.4], 1, { add: 1 }); this.addLight(p0, 25, 0.08);
+    for (let i = 0; i < 3; i++) this.P(0, p0, [d[0] / L * 3 + (r() - 0.5), 0.5, d[2] / L * 3 + (r() - 0.5)], 0.25, 0.9, 1.8 + r(), [0.36, 0.36, 0.37], 0.3, { drag: 1, wind: 0.6 });
+    for (let i = 1; i <= n; i++) { const f = i / (n + 1); this.P(1, [p0[0] + d[0] * f, p0[1] + d[1] * f, p0[2] + d[2] * f], [0, 0, 0], 0.07, 0, 0.1, [2.2, 1.8, 1], 0.7, { add: 1 }); }
+    if (hit === 'water') { for (let i = 0; i < 6; i++) this.P(2, p1, [(r() - 0.5) * 3, 2 + r() * 3, (r() - 0.5) * 3], 0.12 + r() * 0.12, 0.3, 0.6, [0.7, 0.75, 0.78], 0.7, { grav: 9.8, water: 1 }); }
+    else if (hit) { for (let i = 0; i < 8; i++) this.P(3, p1, [(r() - 0.5) * 6, 1 + r() * 4, (r() - 0.5) * 6], 0.04 + r() * 0.05, 0, 0.8, [0.55, 0.12, 0.08], 1, { grav: 9.8 }); this.P(1, p1, [0, 0, 0], 0.3, 1.5, 0.08, [3, 2, 1], 1, { add: 1 }); }
+  }
   // sword clashes while two ships are lashed together
   melee(a, b, dt) {
     this.meleeT = (this.meleeT || 0) - dt; if (this.meleeT > 0) return; this.meleeT = 0.09; const r = this.rnd;

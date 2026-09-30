@@ -197,13 +197,40 @@ class World {
       const tr = c.atHelm ? c.rud : 0; s.rudder += (tr - s.rudder) * Math.min(1, dt * 4); if (c.atHelm) s.sailSet += (c.sail - s.sailSet) * Math.min(1, dt * 1.5);
       if (c.board) { c.board = false; if (c.atHelm) { if (!s.board) this.startBoard(s); else this.endBoard(s); } }
     }
-    if (s.chars) for (const id of Object.keys(s.chars)) { const ch = s.chars[id]; if (ch && ch.gi >= 0 && s.guns[ch.gi]) s.guns[ch.gi].mannedT = this.t; }
+    if (s.chars) for (const id of Object.keys(s.chars)) {
+      const ch = s.chars[id]; if (!ch) continue; if (ch.gi >= 0 && s.guns[ch.gi]) s.guns[ch.gi].mannedT = this.t;
+      ch.wcd = (ch.wcd || 0) - dt; if (ch.atkT > 0) ch.atkT -= dt;
+      if (ch.atkReq) { ch.atkReq = false; if (ch.w > 0 && ch.wcd <= 0 && !s.sunk && ch.mode !== 1 && !ch.climb) this.charAttack(s, ch); }
+    }
     if (s.gun && !s.sunk) { const c = s.ctrlG; if (c && c.fire && c.gi >= 0) this.fireGun(s, c.gi, c.dl); }
+  }
+  // personal weapons: cutlass (melee during boarding) and musket (hitscan at crew on enemy decks)
+  charAttack(s, ch) {
+    if (ch.w === 2) {
+      ch.wcd = 0.6; ch.atkT = 0.5;
+      if (s.board != null && ch.lvl === 0) { const e = this.ships[s.board]; if (e && !e.sunk) { e.crew = Math.max(0, e.crew - 0.011 - this.rnd() * 0.01); if (this.on.melee) this.on.melee(s, e); } }
+      return;
+    }
+    if (ch.w === 1) {
+      ch.wcd = 2.4; ch.atkT = 0.35; const sc = s.s, cp = Math.cos(ch.pitch);
+      const p0 = s.toWorld([ch.x, (ch.eyeY != null ? ch.eyeY : Hull.floorY(ch.lvl, ch.z / sc) * sc + 1.55 * sc) - 0.15, ch.z]);
+      const dw = M3.mulV(s.R, [cp * Math.sin(ch.yaw) + (this.rnd() - 0.5) * 0.012, Math.sin(ch.pitch) + (this.rnd() - 0.5) * 0.012, cp * Math.cos(ch.yaw) + (this.rnd() - 0.5) * 0.012]);
+      let end = p0.slice(), hit = null;
+      for (let t = 1.5; t < 100; t += 1.2) {
+        const p = [p0[0] + dw[0] * t, p0[1] + dw[1] * t, p0[2] + dw[2] * t]; end = p;
+        if (p[1] < Waves.height(p[0], p[2], this.t)) { hit = 'water'; break; }
+        for (const e of this.ships) { if (e === s || e.team === s.team || e.sunk || e.dead) continue; const l = e.toLocal(p), k = e.s;
+          if (Hull.inside(l[0] / k, l[1] / k, l[2] / k) || (Math.abs(l[0]) < Hull.halfW(0, l[2] / k) * k && l[1] > Hull.deckY(l[2] / (k * Hull.HL)) * k - 0.3 && l[1] < Hull.deckY(l[2] / (k * Hull.HL)) * k + 2.6 * k)) { hit = e; break; } }
+        if (hit) break;
+      }
+      if (hit && hit !== 'water') hit.crew = Math.max(0, hit.crew - 0.006 - this.rnd() * 0.008);
+      if (this.on.charShot) this.on.charShot(s, p0, end, hit && hit !== 'water' ? hit : (hit ? 'water' : null));
+    }
   }
   // a human fires one specific gun along the direction he is looking (ship-local), nothing else
   fireGun(s, gi, dl) {
     const g = s.guns[gi]; if (!g || !g.alive || g.t > 0 || s.crew < 0.08 || s.board != null) return false;
-    const n = V3.norm(dl); const dw = M3.mulV(s.R, n); this.fire(s, g, dw); g.mannedT = this.t; return true;
+    const n = V3.norm(dl); const dw = M3.mulV(s.R, n); this.fire(s, g, dw, s.gun); g.mannedT = this.t; return true;
   }
   // ---------- crew, muskets, boarding ----------
   startBoard(s) {
@@ -252,17 +279,18 @@ class World {
     loser.helm = loser.gun = loser.human = null; loser.ctrlH = loser.ctrlG = null; loser.ai.target = null;
     if (this.on.captured) this.on.captured(loser, winner);
   }
-  fire(s, g, dw) {
+  fire(s, g, dw, who) {
     const r = this.rnd; g.t = 9 + r() * 7; s.stats.shots++;
     const gw = s.toWorld(g.p);
     const d = V3.norm([dw[0] + gauss(r) * 0.006, dw[1] + gauss(r) * 0.006, dw[2] + gauss(r) * 0.006]);
     const v0 = MUZZLE * (1 + gauss(r) * 0.02);
     const sv = s.pointVel(gw);
     const b = new Ball([gw[0] + d[0] * 1.2, gw[1] + d[1] * 1.2, gw[2] + d[2] * 1.2], [d[0] * v0 + sv[0], d[1] * v0 + sv[1], d[2] * v0 + sv[2]], s);
-    this.balls.push(b);
+    this.balls.push(b); b.who = who || null;
     s.impulse(gw, [-d[0] * BALL_M * v0 * 1.6, -d[1] * BALL_M * v0 * 1.6, -d[2] * BALL_M * v0 * 1.6]);
     s.fireFlash = 1;
-    if (this.on.shot) this.on.shot(gw, d, s);
+    if (this.on.shot) this.on.shot(gw, d, s, b);
+    return b;
   }
   // ---------- ballistics ----------
   stepBalls(dt) {

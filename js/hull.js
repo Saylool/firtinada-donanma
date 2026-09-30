@@ -185,7 +185,8 @@ const Hull = (() => {
         mb.cyl(P(0, 0.85, 0), P(0, 1.5, 0), 0.24, 0.2, 6, 7, part(1));
         mb.cyl(P(-0.29, 1.45, 0), P(-0.34, 0.8, 0.12), 0.07, 0.06, 4, 7, part(2)); mb.cyl(P(0.29, 1.45, 0), P(0.36, 0.85, 0.35), 0.07, 0.06, 4, 7, part(2));
         mb.cyl(P(0, 1.5, 0), P(0, 1.78, 0), 0.13, 0.12, 6, 7, part(3)); mb.cyl(P(0, 1.78, 0), P(0, 1.9, 0), 0.19, 0.12, 6, 7, part(4));
-        mb.cyl(P(0.36, 0.85, 0.35), P(0.45, 1.5, 0.75), 0.03, 0.02, 4, 7, part(5)); mb.uo = null;
+        mb.cyl(P(0.36, 0.85, 0.35), P(0.45, 1.5, 0.75), 0.03, 0.02, 4, 7, part(5));
+        mb.cyl(P(0.2, 1.22, 0.25), P(0.22, 1.27, 1.45), 0.035, 0.03, 4, 7, part(6)); mb.cyl(P(0.2, 1.2, 0.0), P(0.2, 1.24, 0.45), 0.07, 0.04, 4, 7, part(6)); mb.uo = null;
     };
     out.figure = figure;
     { const rnd = mulberry32(9), spots = [];
@@ -252,7 +253,19 @@ const Hull = (() => {
     const c = 1.0; const f = (x, y0, z, yaw, id) => { mb.uo = [y0, id]; const cc = Math.cos(yaw), sn = Math.sin(yaw); const P = (dx, dy, dz) => [x + dx * cc + dz * sn, y0 + dy, z - dx * sn + dz * cc]; const part = k => id * 8 + k;
       mb.cyl(P(-0.16, 0.05, 0), P(-0.16, 0.85, 0), 0.11, 0.1, 5, 7, part(0)); mb.cyl(P(0.16, 0.05, 0), P(0.16, 0.85, 0), 0.11, 0.1, 5, 7, part(0)); mb.cyl(P(0, 0.85, 0), P(0, 1.5, 0), 0.24, 0.2, 6, 7, part(1));
       mb.cyl(P(-0.29, 1.45, 0), P(-0.34, 0.8, 0.12), 0.07, 0.06, 4, 7, part(2)); mb.cyl(P(0.29, 1.45, 0), P(0.36, 0.85, 0.35), 0.07, 0.06, 4, 7, part(2));
-      mb.cyl(P(0, 1.5, 0), P(0, 1.78, 0), 0.13, 0.12, 6, 7, part(3)); mb.cyl(P(0, 1.78, 0), P(0, 1.9, 0), 0.19, 0.12, 6, 7, part(4)); mb.cyl(P(0.36, 0.85, 0.35), P(0.45, 1.5, 0.75), 0.03, 0.02, 4, 7, part(5)); mb.uo = null; };
+      mb.cyl(P(0, 1.5, 0), P(0, 1.78, 0), 0.13, 0.12, 6, 7, part(3)); mb.cyl(P(0, 1.78, 0), P(0, 1.9, 0), 0.19, 0.12, 6, 7, part(4)); mb.cyl(P(0.36, 0.85, 0.35), P(0.45, 1.5, 0.75), 0.03, 0.02, 4, 7, part(5)); mb.cyl(P(0.2, 1.22, 0.25), P(0.22, 1.27, 1.45), 0.035, 0.03, 4, 7, part(6)); mb.cyl(P(0.2, 1.2, 0.0), P(0.2, 1.24, 0.45), 0.07, 0.04, 4, 7, part(6)); mb.uo = null; };
     f(0, 0, 0, 0, 0); return { verts: new Float32Array(mb.v), idx: new Uint32Array(mb.i) }; }
-  return { FLOORS, HATCH, floorY, halfW, buildFigure, MB, L, HL, HB, rim, deckY, keel, halfBeam, halfWidth, bottomY, inside, sec, MASTS, PORT_ROWS, PORT_Z, mastSails, columns, guns, build };
+  // first-person viewmodels (camera space, -z is forward, hand at origin): sword, musket, sleeve.  mat 8, ex: 0 coat 1 skin 2 steel 3 wood 4 brass
+  function buildViewmodels() {
+    const mb = new MB(), R = {}; let a;
+    a = mb.mark(); // sword: blade up (+y), guard along x, grip below
+    mb.box([0, 0.46, 0], [0.035, 0.78, 0.008], 8, 2); mb.box([0, 0.06, 0], [0.22, 0.03, 0.03], 8, 4); mb.cyl([0, 0.04, 0], [0, -0.13, 0], 0.017, 0.017, 6, 8, 3); mb.cyl([0, -0.14, 0], [0, -0.16, 0], 0.03, 0.03, 6, 8, 4);
+    mb.cyl([0, -0.09, 0], [0, -0.09, 0.0001], 0.045, 0.045, 7, 8, 1); // fist
+    R.sword = [a, mb.mark() - a]; a = mb.mark();
+    mb.cyl([0, 0, 0.35], [0, 0.005, -1.05], 0.022, 0.018, 6, 8, 2); mb.box([0, -0.04, 0.42], [0.05, 0.09, 0.42], 8, 3); mb.cyl([0, -0.03, -0.35], [0, -0.04, -0.3], 0.03, 0.03, 6, 8, 1); mb.cyl([0, -0.03, 0.15], [0, -0.04, 0.2], 0.03, 0.03, 6, 8, 1);
+    R.musket = [a, mb.mark() - a]; a = mb.mark();
+    mb.cyl([0, -0.12, 0.05], [0, -0.42, 0.55], 0.065, 0.085, 7, 8, 0); R.sleeve = [a, mb.mark() - a];
+    return { verts: new Float32Array(mb.v), idx: new Uint32Array(mb.i), ranges: R };
+  }
+  return { buildViewmodels, FLOORS, HATCH, floorY, halfW, buildFigure, MB, L, HL, HB, rim, deckY, keel, halfBeam, halfWidth, bottomY, inside, sec, MASTS, PORT_ROWS, PORT_Z, mastSails, columns, guns, build };
 })();

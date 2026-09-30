@@ -27,7 +27,7 @@ class Renderer {
     this.pCopy = P('copy', SH.postVS, SH.copyFS); this.pBright = P('bright', SH.postVS, SH.brightFS); this.pBlur = P('blur', SH.postVS, SH.blurFS);
     this.pComp = P('comp', SH.postVS, SH.compFS); this.pFxaa = P('fxaa', SH.postVS, SH.fxaaFS);
     this.emptyVAO = gl.createVertexArray();
-    this.makeShadow(); this.buildWater(); this.buildShipMesh(); this.buildFigure(); this.buildBox(); this.buildParticleBuffers();
+    this.makeShadow(); this.buildWater(); this.buildShipMesh(); this.buildFigure(); this.buildViewmodel(); this.buildBox(); this.buildParticleBuffers();
     this.exposure = 1.25; this.bloom = 0.55; this.foamT = 3.2;
     this.bolt = null; this.tmp = new Float32Array(16);
   }
@@ -67,6 +67,7 @@ class Renderer {
     const l = gl.getAttribLocation(this.pLine.p, 'aPos'); gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0); gl.bindVertexArray(null);
     this.boltBuf = gl.createBuffer();
   }
+  buildViewmodel() { const v = Hull.buildViewmodels(); this.vmVAO = this.meshVAO(v.verts, v.idx); this.vmR = v.ranges; }
   buildFigure() { const f = Hull.buildFigure(); this.figVAO = this.meshVAO(f.verts, f.idx); this.figCount = f.idx.length; }
   buildBox() { const mb = new Hull.MB(); mb.box([0, 0, 0], [1, 1, 1], 3, 0); this.boxVAO = this.meshVAO(new Float32Array(mb.v), new Uint32Array(mb.i)); this.boxCount = mb.i.length; }
   buildParticleBuffers() {
@@ -166,7 +167,22 @@ class Renderer {
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     fr.fx.draw(this, vp, view, fr);
     gl.disable(gl.BLEND); gl.depthMask(true); gl.disable(gl.DEPTH_TEST);
+    if (fr.fps && fr.vm && fr.vm.w > 0) this.drawViewmodel(fr, vp, view);
     this.post(fr);
+  }
+  drawViewmodel(fr, vp, view) { // the weapon in your hands, drawn on top of everything with its own depth range
+    const gl = this.gl, vm = fr.vm, t = fr.time; gl.bindFramebuffer(gl.FRAMEBUFFER, this.B.f); gl.viewport(0, 0, this.W, this.H); gl.clear(gl.DEPTH_BUFFER_BIT); gl.enable(gl.DEPTH_TEST); gl.depthMask(true);
+    const Rc = Float64Array.of(view.right[0], view.up[0], -view.fwd[0], view.right[1], view.up[1], -view.fwd[1], view.right[2], view.up[2], -view.fwd[2]);
+    const rx = a => { const c = Math.cos(a), s = Math.sin(a); return Float64Array.of(1, 0, 0, 0, c, -s, 0, s, c); }, rz = a => { const c = Math.cos(a), s = Math.sin(a); return Float64Array.of(c, -s, 0, s, c, 0, 0, 0, 1); }, ry = a => { const c = Math.cos(a), s = Math.sin(a); return Float64Array.of(c, 0, s, 0, 1, 0, -s, 0, c); };
+    const bob = Math.sin(vm.phase) * 0.012 * vm.moving, sw = vm.swing; let off, Ro;
+    if (vm.w === 2) { const k = sw >= 0 ? Math.sin(sw * Math.PI) : 0, sweep = sw >= 0 ? (0.8 - 1.9 * sw) : 0.25; off = [0.27 - 0.25 * k, -0.3 + bob - (1 - vm.raise) * 0.55, -0.52 + 0.12 * k]; Ro = M3.mul(rz(sweep), rx(-1.05 + 0.55 * k)); }
+    else { const rc = vm.recoil; off = [0.17, -0.21 + bob - (1 - vm.raise) * 0.5, -0.36 + rc * 0.14]; Ro = M3.mul(ry(0.04), rx(0.02 + rc * 0.22)); }
+    const Rf = M3.mul(Rc, Ro), o = M3.mulV(Rc, off), pos = [fr.cam.pos[0] + o[0], fr.cam.pos[1] + o[1], fr.cam.pos[2] + o[2]];
+    const p = this.pShip.use(); this.env(p, fr); this.waveU(p, t); p.m('uVP', vp); p.m('uModel', M4.fromRT(Rf, pos, this.tmp)); p.f('uScale', 1, 1, 1); p.f('uMirror', 0); p.f('uBillow', 0); p.f('uWalk', 0); p.f('uFight', 0); p.f('uWeapon', 0);
+    p.m('uLightVP', this.lightVP); p.i('uShadow', 5); p.i('uHoleN', 0); p.i('uSHoleN', 0); p.f('uInside', this.insideLocal || 0); p.f('uRows', 2); p.f('uPZ', -21, 19); p.f('uCrewN', 0); p.f('uCrewF', 1);
+    const team = fr.localChar ? fr.localChar.ship.team : 0; p.f('uTeamCol', ...(team === 0 ? [.82, .06, .05] : [.08, .22, .82]));
+    gl.bindVertexArray(this.vmVAO); const r = vm.w === 2 ? this.vmR.sword : this.vmR.musket; gl.drawElements(gl.TRIANGLES, r[1], gl.UNSIGNED_INT, r[0] * 4);
+    gl.drawElements(gl.TRIANGLES, this.vmR.sleeve[1], gl.UNSIGNED_INT, this.vmR.sleeve[0] * 4);
   }
   drawBolt(fr, vp) {
     const gl = this.gl, b = fr.bolt; const p = this.pLine.use(); this.env(p, fr); p.m('uVP', vp); p.m('uModel', M4.fromRT(Q.toMat([0, 0, 0, 1]), [0, 0, 0]));
@@ -187,7 +203,7 @@ class Renderer {
       p.f('uHullCol', ...(team === 0 ? [.075, .07, .065] : [.07, .075, .085])); p.f('uStripeCol', ...(team === 0 ? [.78, .58, .12] : [.72, .74, .70])); p.f('uTeamCol', ...(team === 0 ? [.82, .06, .05] : [.08, .22, .82]));
       p.f('uRows', C.rows); p.f('uPZ', Hull.PORT_Z[C.ports[0]] - 2, Hull.PORT_Z[C.ports[C.ports.length - 1]] + 2);
       p.f('uScale', sc, sc, sc);
-      p.f('uCrewF', s.crew); { let ins = 0; if (mode !== 'shadow') { const cl = s.toLocal(fr.cam.pos); if (Hull.inside(cl[0] / sc, cl[1] / sc, cl[2] / sc) && cl[1] / sc < Hull.deckY(cl[2] / (sc * Hull.HL)) - 0.25) ins = 1; } p.f('uInside', mode === 'mirror' ? 0 : ins); }
+      p.f('uCrewF', s.crew); { let ins = 0; if (mode !== 'shadow') { const cl = s.toLocal(fr.cam.pos); if (Hull.inside(cl[0] / sc, cl[1] / sc, cl[2] / sc) && cl[1] / sc < Hull.deckY(cl[2] / (sc * Hull.HL)) - 0.25) ins = 1; if (fr.localChar && fr.localChar.ship === s) this.insideLocal = ins; } p.f('uInside', mode === 'mirror' ? 0 : ins); }
       const nCls = Math.round(d.crewN * (C.crewFrac || 1)); p.f('uCrewN', Math.ceil(nCls * s.crew - 1e-6));
       const bo = s.board != null ? w.ships[s.board] : null; let fs = 1; if (bo) { const l = s.toLocal(bo.com); fs = l[0] >= 0 ? 1 : -1; } p.f('uFight', bo ? 1 : 0); p.f('uFightSide', fs);
       p.m('uModel', model); p.f('uBillow', 0); p.f('uJibSign', s.jibSign || 1);
@@ -195,7 +211,7 @@ class Renderer {
       p.v('uHole', hole, 4); p.i('uHoleN', n); p.i('uSHoleN', 0);
       gl.drawElements(gl.TRIANGLES, d.ranges.hull[1], gl.UNSIGNED_INT, d.ranges.hull[0] * 4);
       gl.drawElements(gl.TRIANGLES, d.ensign[1], gl.UNSIGNED_INT, d.ensign[0] * 4);
-      p.f('uWalk', 0);
+      p.f('uWalk', 0); p.f('uWeapon', 2);
       // masts (yards braced with the wind)
       p.i('uHoleN', 0); p.f('uBillow', s.billow || 0);
       for (const m of s.masts) {
@@ -209,8 +225,8 @@ class Renderer {
         const ch = s.chars[id]; if (!ch || (fr.fps && ch === fr.localChar)) continue;
         const foot = ch.eyeY != null ? ch.eyeY - Char.EYE * sc : Hull.floorY(ch.lvl, ch.z / sc) * sc;
         const Rm = M3.mul(s.R, M3.rotY(ch.yaw)); const o = s.toWorld([ch.x, foot, ch.z]); p.m('uModel', M4.fromRT(Rm, o, this.tmp));
-        p.f('uCrewN', 1); p.f('uFight', 0); p.f('uWalk', ch.moving || 0); p.i('uHoleN', 0); p.i('uSHoleN', 0); p.f('uBillow', 0);
-        gl.bindVertexArray(this.figVAO); gl.drawElements(gl.TRIANGLES, this.figCount, gl.UNSIGNED_INT, 0); gl.bindVertexArray(this.shipVAO); p.f('uWalk', 0);
+        p.f('uCrewN', 1); p.f('uFight', ch.atkT > 0 ? 1 : 0); p.f('uWeapon', ch.w || 0); p.f('uWalk', ch.moving || 0); p.i('uHoleN', 0); p.i('uSHoleN', 0); p.f('uBillow', 0);
+        gl.bindVertexArray(this.figVAO); gl.drawElements(gl.TRIANGLES, this.figCount, gl.UNSIGNED_INT, 0); gl.bindVertexArray(this.shipVAO); p.f('uWalk', 0); p.f('uFight', 0); p.f('uWeapon', 2);
       }
     }
     // broken masts floating in the water

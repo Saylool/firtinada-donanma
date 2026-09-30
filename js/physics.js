@@ -292,5 +292,6 @@ class Debris extends Body {
 Debris.nextId = 1;
 // ---------------- world: ships, balls, debris, particles hooks ----------------
 class Ball {
-  constructor(p, v, owner) { this.p = p; this.v = v; this.owner = owner; this.age = 0; this.inside = -1; this.hitSails = new Set(); this.dead = false; this.trail = 0; }
+  constructor(p, v, owner) { this.id = Ball.nextId++; this.who = null; this.p = p; this.v = v; this.owner = owner; this.age = 0; this.inside = -1; this.hitSails = new Set(); this.dead = false; this.trail = 0; }
 }
+Ball.nextId = 1;
