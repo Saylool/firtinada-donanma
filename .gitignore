@@ -2,3 +2,7 @@ shots/
 node_modules/
 .DS_Store
 tools/job.*
+.vercel
+.env*
+.vercel/
+.env.local

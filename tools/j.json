@@ -1,0 +1,7 @@
+{"urls":["https://firtinada-donanma.vercel.app/?mode=spectate","https://firtinada-donanma.vercel.app/?mode=spectate"],"width":1100,"height":640,"flags":[],"loadWait":6000,"steps":[
+ {"tab":0,"eval":"__sim.startHost(); 1"},{"wait":6000},
+ {"tab":0,"eval":"Net.code","store":"code"},
+ {"tab":1,"eval":"__sim.startJoin('{{code}}'); 1"},{"wait":8000},
+ {"tab":1,"log":"JSON.stringify({role:__sim.G.role, ships:__sim.world.ships.length, snaps:__sim.G.snaps.length, my:__sim.G.my&&__sim.G.my.name})"},
+ {"tab":1,"shot":"shots/live.png"}
+]}
