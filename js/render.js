@@ -167,6 +167,8 @@ class Renderer {
       p.f('uHullCol', ...(team === 0 ? [.075, .07, .065] : [.07, .075, .085])); p.f('uStripeCol', ...(team === 0 ? [.78, .58, .12] : [.72, .74, .70])); p.f('uTeamCol', ...(team === 0 ? [.82, .06, .05] : [.08, .22, .82]));
       p.f('uRows', C.rows); p.f('uPZ', Hull.PORT_Z[C.ports[0]] - 2, Hull.PORT_Z[C.ports[C.ports.length - 1]] + 2);
       p.f('uScale', sc, sc, sc);
+      const nCls = Math.round(d.crewN * (C.crewFrac || 1)); p.f('uCrewN', Math.ceil(nCls * s.crew - 1e-6));
+      const bo = s.board != null ? w.ships[s.board] : null; let fs = 1; if (bo) { const l = s.toLocal(bo.com); fs = l[0] >= 0 ? 1 : -1; } p.f('uFight', bo ? 1 : 0); p.f('uFightSide', fs);
       p.m('uModel', model); p.f('uBillow', 0); p.f('uJibSign', s.jibSign || 1);
       hole.fill(0); let n = 0; for (let i = s.holes.length - 1; i >= 0 && n < 24; i--, n++) { const h = s.holes[i]; hole.set([h.p[0] / sc, h.p[1] / sc, h.p[2] / sc, h.r / sc], n * 4); }
       p.v('uHole', hole, 4); p.i('uHoleN', n); p.i('uSHoleN', 0);
@@ -196,6 +198,12 @@ class Renderer {
       p.m('uModel', db.modelMatrix(this.tmp)); p.f('uScale', db.size[0], db.size[1], db.size[2]); gl.drawElements(gl.TRIANGLES, this.boxCount, gl.UNSIGNED_INT, 0);
     }
     p.f('uScale', 1, 1, 1);
+    // boarding ropes
+    { const v = []; for (const a of w.ships) { if (a.board == null || a.dead) continue; const b = w.ships[a.board]; if (!b || b.id < a.id) continue;
+        const same = (a.R[2] * b.R[2] + a.R[8] * b.R[8]) > 0; for (const z of [-9, 0, 9]) { const pa = a.toWorld([0, 11 * a.s, z * a.s]), pb = b.toWorld([0, 11 * b.s, (same ? z : -z) * b.s]); v.push(...pa, ...pb); } }
+      if (v.length) { const q = this.pLine.use(); this.env(q, fr); q.m('uVP', vp); q.m('uModel', M4.fromRT(new Float64Array([1, 0, 0, 0, 1, 0, 0, 0, 1]), [0, 0, 0], this.tmp)); q.f('uCol', .16, .11, .06, 1);
+        gl.bindVertexArray(null); gl.bindBuffer(gl.ARRAY_BUFFER, this.boltBuf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(v), gl.DYNAMIC_DRAW);
+        const l = gl.getAttribLocation(q.p, 'aPos'); gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0); gl.drawArrays(gl.LINES, 0, v.length / 3); } }
     // rigging lines
     gl.bindVertexArray(this.lineVAO); p = this.pLine.use(); this.env(p, fr); p.m('uVP', vp); p.f('uCol', .07, .05, .035, 1);
     for (const s of w.ships) {

@@ -75,8 +75,9 @@
   <div id="fleet" class="panel"></div>
   <div id="pl" class="panel">
     <div class="r"><span><b id="plName"></b> <span id="plCls" style="color:var(--dim)"></span></span><span class="big"><span id="spd">0</span> kn &nbsp;<span id="hdg">000°</span></span></div>
-    <div class="r"><span class="g">Yelken <span class="bar"><b id="plSail" style="background:#d8c48a;width:100%"></b></span></span><span class="g">Gövde <span class="bar"><b id="plHull" style="background:#5fbf7a;width:100%"></b></span></span><span class="g">Toplar <b id="plGuns" style="color:var(--fg)">◄ 0/0 · 0/0 ►</b></span></div>
-    <div class="hint"><b>A/D</b> dümen · <b>W/S</b> yelken · <b>Boşluk / tıkla</b> ateş (nişan fareyle) · sürükle: kamera · tekerlek: yakınlık</div>
+    <div class="r"><span class="g">Yelken <span class="bar"><b id="plSail" style="background:#d8c48a;width:100%"></b></span></span><span class="g">Gövde <span class="bar"><b id="plHull" style="background:#5fbf7a;width:100%"></b></span></span><span class="g">Mürettebat <span class="bar"><b id="plCrew" style="background:#c9a0dc;width:100%"></b></span></span><span class="g">Toplar <b id="plGuns" style="color:var(--fg)">◄ 0/0 · 0/0 ►</b></span></div>
+    <div id="plBoard" style="display:none;text-align:center;color:#ffd46a;font-weight:600;margin-top:3px"></div>
+    <div class="hint" id="plHint"></div>
   </div>
   <div id="ctl" class="panel">
     <span id="camBtns"></span>
@@ -94,6 +95,7 @@
     <div class="sub">Gerçek dalga fiziğiyle yüzen yelkenli savaş gemileri · top atışı · batma · online çok oyunculu</div>
     <div class="row"><label>Adın <input type="text" id="pname" maxlength="14" style="width:130px"></label>
       <label>Takım <select id="pteam"><option value="auto">Otomatik</option><option value="0">Kızıl Filo</option><option value="1">Mavi Filo</option></select></label>
+      <label>Rol <select id="prole"><option value="both">Kaptan (dümen + toplar)</option><option value="helm">Dümenci (gemiyi sür)</option><option value="gun">Topçu (topları ateşle)</option></select></label>
       <label>Filo büyüklüğü <select id="psize"><option>2</option><option selected>3</option><option>4</option><option>5</option></select></label>
       <label>Hava <select id="mweather"></select></label></div>
     <div class="grid" id="clsGrid"></div>
@@ -105,7 +107,7 @@
     </div>
     <div id="mstat"></div>
     <div class="keys"><kbd>A</kbd>/<kbd>D</kbd> dümen · <kbd>W</kbd>/<kbd>S</kbd> yelken aç/kıs · <kbd>Boşluk</kbd> veya sol tık: ateş (toplar imleci hedefler, sadece bordanı çeviren toplar atar) · fare sürükle: kamera · <kbd>C</kbd> kamera · <kbd>H</kbd> arayüz · <kbd>M</kbd> menü<br>
-    İpucu: dalgalar gemini yalpalatır; iyi nişan için gemi tepede/çukurda değilken ateş et. Hedef bordana dik olsun, rüzgârı yandan ya da kıçtan al.</div>
+    <b>İki kişilik mürettebat:</b> biri <b>Dümenci</b>, diğeri <b>Topçu</b> seçip aynı odaya girsin (oda sahibi de rol seçer); gelen oyuncu boş görevi olan gemiye biner, olmayan görevi yapay zekâ üstlenir. <kbd>F</kbd>: yakındaki düşman gemisine <b>abordaj</b> (halatlar atılır, kılıç dövüşü; mürettebatı biten gemi ele geçirilir). Tüfekçiler yakın mesafede kendiliğinden ateş eder.<br>İpucu: dalgalar gemini yalpalatır; iyi nişan için gemi tepede/çukurda değilken ateş et. Hedef bordana dik olsun, rüzgârı yandan ya da kıçtan al.</div>
   </div>
 </div>
 <div id="err"></div>

@@ -111,11 +111,15 @@ void main(){
 // ---------------- ships / debris ----------------
 SH.shipVS = HEAD + `
 in vec3 aPos; in vec3 aNrm; in vec2 aUV; in float aMat; in float aEx;
-uniform mat4 uVP,uModel; uniform vec3 uScale; uniform float uBillow,uJibSign,uTime;
+uniform mat4 uVP,uModel; uniform vec3 uScale; uniform float uBillow,uJibSign,uTime,uFight,uFightSide;
 out vec3 vPos; out vec3 vW; out vec3 vN; out vec2 vUV; flat out float vMat; flat out float vEx;
 float bul(float u,float v){ float fl=sin(3.14159*u); float t=1.-v; return uBillow*3.4*fl*sin(1.5708*t)*(.55+.45*sin(3.14159*t)); }
 void main(){
-  vec3 p=aPos*uScale; vec3 n=aNrm; vec2 uv=aUV; int m=int(aMat+.5);
+  vec3 ap=aPos; vec3 n=aNrm; vec2 uv=aUV; int m=int(aMat+.5);
+  if(m==7){ float id=floor(aEx/8.); float part=aEx-id*8.; float ph=id*1.7; float base=aUV.x; float hs=fract(sin(id*91.3)*437.5);
+    ap.x+=uFightSide*uFight*(hs*3.2+.5); ap.y+=.04*sin(uTime*2.+ph)+uFight*abs(sin(uTime*5.+ph))*.12; ap.z+=uFight*sin(uTime*3.+ph)*.5;
+    if(part>1.5&&part<2.5||part>4.5){ float w=clamp((base+1.5-aPos.y)/0.9,0.,1.); float sw=sin(uTime*(2.4+uFight*8.)+ph)*(.22+uFight*.9); ap.z+=sw*w*(part>4.5?1.9:1.); ap.y+=abs(sw)*w*(part>4.5?.7:.2)*(.2+uFight); } }
+  vec3 p=ap*uScale;
   vPos=p;
   if(m==2){
     float u=uv.x,v=uv.y; float b=bul(u,v);
@@ -131,7 +135,7 @@ void main(){
 }`;
 SH.shipFS = HEAD + SH.noise + Waves.glsl + SH.env + `
 in vec3 vPos; in vec3 vW; in vec3 vN; in vec2 vUV; flat in float vMat; flat in float vEx; out vec4 oCol;
-uniform float uRows; uniform vec2 uPZ; uniform vec3 uHullCol,uStripeCol,uTeamCol; uniform vec4 uHole[24]; uniform int uHoleN; uniform vec4 uSHole[10]; uniform int uSHoleN; uniform float uBillow; uniform int uKind;
+uniform float uRows,uCrewN; uniform vec2 uPZ; uniform vec3 uHullCol,uStripeCol,uTeamCol; uniform vec4 uHole[24]; uniform int uHoleN; uniform vec4 uSHole[10]; uniform int uSHoleN; uniform float uBillow; uniform int uKind;
 float ridge(float x,float w){ return ss(w,0.,abs(x)); }
 void main(){
   int m=int(vMat+.5); vec3 P=vPos;
@@ -185,6 +189,9 @@ void main(){
     spec=.02; shin=8.; ao=.72+.28*vUV.y; ao*=.8+.2*sin(3.14159*vUV.x);
     // seams
     alb*=1.-.35*ridge(fract(P.x*.11+.5)-.0,.02);
+  } else if(m==7){ float id=floor(vEx/8.); float part=vEx-id*8.; if(id>=uCrewN) discard;
+    if(part<.5) alb=vec3(.10,.09,.09); else if(part<1.5||part<2.5) alb=mix(uTeamCol*.5,vec3(.55,.5,.42),step(.5,fract(hash21(vec2(id,3.))*3.))*step(1.5,part)*.0); else if(part<3.5) alb=vec3(.72,.52,.40); else if(part<4.5) alb=vec3(.04); else { alb=vec3(.72,.75,.8); spec=.9; shin=80.; }
+    if(part<3.5&&part>1.5&&part<2.5) alb=uTeamCol*.5; spec=max(spec,.08);
   } else if(m==3){
     float g=vnoise(vec2(P.y*1.2+P.x*3.,P.z*3.+P.x*2.)); alb=vec3(.16,.10,.06)*(.65+.7*g); spec=.12;
   } else if(m==4){ alb=vec3(.78,.55,.10); spec=.9; shin=90.; }

@@ -63,7 +63,7 @@ const Hull = (() => {
   // ---------- mesh builder ----------
   class MB {
     constructor() { this.v = []; this.i = []; this.n = 0; }
-    vert(p, n, u, v, mat, ex) { this.v.push(p[0], p[1], p[2], n[0], n[1], n[2], u, v, mat, ex || 0); return this.n++; }
+    vert(p, n, u, v, mat, ex) { if (this.uo) { u = this.uo[0]; v = this.uo[1]; } this.v.push(p[0], p[1], p[2], n[0], n[1], n[2], u, v, mat, ex || 0); return this.n++; }
     tri(a, b, c) { this.i.push(a, b, c); }
     quad(a, b, c, d) { this.i.push(a, b, c, a, c, d); }
     mark() { return this.i.length; }
@@ -136,6 +136,24 @@ const Hull = (() => {
     const tri = (T, H, C) => mb.grid(8, 8, (u, v) => [[T[0] + u * (1 - v) * (C[0] - T[0]) + v * (H[0] - T[0]), T[1] + u * (1 - v) * (C[1] - T[1]) + v * (H[1] - T[1]), T[2] + u * (1 - v) * (C[2] - T[2]) + v * (H[2] - T[2])], [1, 0, 0]], 2, 1);
     tri([0, bs1[1] - 0.3, bs1[2] - 0.6], [0, 33, 15.6], [0, rim(0.7) + 3.5, 22]);
     tri([0, bs1[1] - 2.5, bs1[2] - 9], [0, 27, 15.6], [0, rim(0.7) + 2.5, 21]);
+    // ---- crew: baked into the hull mesh, animated in the vertex shader (id/part packed in aEx, base height in uv.x)
+    { const rnd = mulberry32(9), spots = [];
+      const add = (x, z, yaw) => spots.push([x, z, yaw]);
+      for (let z = -14; z <= 17; z += 3.1) for (const sd of [-1, 1]) { const s2 = z / HL; add(sd * (halfBeam(s2) * sec(1) - 1.25), z + (rnd() - 0.5) * 0.8, sd > 0 ? Math.PI / 2 : -Math.PI / 2); }
+      add(0, -20.4, 0); add(1.2, -21.5, 3.1); add(-1.3, -18, 1); add(0.5, -23, 3); add(2.6, 20.5, 0); add(-2.6, 20.8, 0); add(0, 22.5, 0);
+      add(1.8, 4.5, 1.5); add(-1.8, 6.5, -1.5); add(1.4, -3.5, 0.5); add(-1.4, 10.5, 2);
+      for (let i = spots.length - 1; i > 0; i--) { const j = (rnd() * (i + 1)) | 0; [spots[i], spots[j]] = [spots[j], spots[i]]; }
+      out.crewN = spots.length;
+      spots.forEach(([x, z, yaw], id) => {
+        const y0 = deckY(z / HL), c = Math.cos(yaw), sn = Math.sin(yaw); mb.uo = [y0, id];
+        const P = (dx, dy, dz) => [x + dx * c + dz * sn, y0 + dy, z - dx * sn + dz * c];
+        const part = k => id * 8 + k;
+        mb.cyl(P(-0.16, 0.05, 0), P(-0.16, 0.85, 0), 0.11, 0.1, 5, 7, part(0)); mb.cyl(P(0.16, 0.05, 0), P(0.16, 0.85, 0), 0.11, 0.1, 5, 7, part(0));
+        mb.cyl(P(0, 0.85, 0), P(0, 1.5, 0), 0.24, 0.2, 6, 7, part(1));
+        mb.cyl(P(-0.29, 1.45, 0), P(-0.34, 0.8, 0.12), 0.07, 0.06, 4, 7, part(2)); mb.cyl(P(0.29, 1.45, 0), P(0.36, 0.85, 0.35), 0.07, 0.06, 4, 7, part(2));
+        mb.cyl(P(0, 1.5, 0), P(0, 1.78, 0), 0.13, 0.12, 6, 7, part(3)); mb.cyl(P(0, 1.78, 0), P(0, 1.9, 0), 0.19, 0.12, 6, 7, part(4));
+        mb.cyl(P(0.36, 0.85, 0.35), P(0.45, 1.5, 0.75), 0.03, 0.02, 4, 7, part(5)); // cutlass in the right hand
+      }); mb.uo = null; }
     out.ranges.hull = [start, mb.mark() - start];
 
     // ---- masts, yards, sails, flags ----

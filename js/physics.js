@@ -3,10 +3,10 @@
 const RHO_W = 1025, RHO_A = 1.2;
 const ALL_PORTS = [0, 1, 2, 3, 4, 5, 6, 7, 8];
 const SHIP_CLASSES = {
-  sloop:   { key: 'sloop',   name: 'Şalopa',              s: 0.62, masts: [0, 1],    rows: 1, ports: [2, 3, 4, 5, 6], desc: 'Küçük, çevik, hızlı; az top, kolay batar', sailK: 1.35 },
-  frigate: { key: 'frigate', name: 'Fırkateyn',           s: 0.82, masts: [0, 1, 2], rows: 1, ports: ALL_PORTS,        desc: 'Dengeli: hız, manevra, orta ateş gücü', sailK: 1.15 },
-  line:    { key: 'line',    name: 'Hattı Harp Gemisi',   s: 1.0,  masts: [0, 1, 2], rows: 2, ports: ALL_PORTS,        desc: 'İki sıra top, ağır ve sağlam', sailK: 1.0 },
-  first:   { key: 'first',   name: 'Birinci Sınıf Kalyon', s: 1.18, masts: [0, 1, 2], rows: 2, ports: ALL_PORTS,        desc: 'Dev gövde, en çok top ve dayanıklılık; yavaş dönüş', sailK: 1.0 },
+  sloop:   { key: 'sloop',   name: 'Şalopa',              s: 0.62, masts: [0, 1],    rows: 1, ports: [2, 3, 4, 5, 6], desc: 'Küçük, çevik, hızlı; az top, kolay batar', sailK: 1.35, crewFrac: 0.45 },
+  frigate: { key: 'frigate', name: 'Fırkateyn',           s: 0.82, masts: [0, 1, 2], rows: 1, ports: ALL_PORTS,        desc: 'Dengeli: hız, manevra, orta ateş gücü', sailK: 1.15, crewFrac: 0.7 },
+  line:    { key: 'line',    name: 'Hattı Harp Gemisi',   s: 1.0,  masts: [0, 1, 2], rows: 2, ports: ALL_PORTS,        desc: 'İki sıra top, ağır ve sağlam', sailK: 1.0, crewFrac: 1 },
+  first:   { key: 'first',   name: 'Birinci Sınıf Kalyon', s: 1.18, masts: [0, 1, 2], rows: 2, ports: ALL_PORTS,        desc: 'Dev gövde, en çok top ve dayanıklılık; yavaş dönüş', sailK: 1.0, crewFrac: 1 },
 };
 
 class Body {
@@ -79,9 +79,11 @@ class Ship extends Body {
   constructor(id, team, name, x, z, heading, world, cls) {
     super();
     const C = this.cls = SHIP_CLASSES[cls] || SHIP_CLASSES.line, s = this.s = C.s;
-    this.id = id; this.team = team; this.name = name; this.world = world; this.human = null; this.sailSet = 1; this.fires = [];
+    this.id = id; this.team = team; this.name = name; this.world = world; this.human = null; this.helm = null; this.gun = null; this.hn = ''; this.gn = ''; this.sailSet = 1; this.fires = [];
+    this.crew = 1; this.board = null; this.captured = false; this.ctrlH = null; this.ctrlG = null; this.musketT = Math.random() * 2;
     this.cols = Hull.columns().map(c => ({ p: [c.p[0] * s, c.p[1] * s, c.p[2] * s], area: c.area * s * s, thick: c.thick * s, dz: c.dz * s, lat: c.lat }));
     this.gunDefs = Hull.guns().filter(g => g.row < C.rows && C.ports.includes(Hull.PORT_Z.indexOf(g.p[2]))).map(g => ({ ...g, p: [g.p[0] * s, g.p[1] * s, g.p[2] * s] }));
+    this.crewMax = Math.round(9 * this.gunDefs.length + 30 * s);
     this.guns = this.gunDefs.map(g => ({ ...g, t: 6 + Math.random() * 14, alive: true }));
     this.masts = Hull.MASTS.map((m, i) => ({ i, hp: 100, alive: true, yard: 0, holes: [], sailHp: Hull.mastSails(i).map(() => 1), anchor: m.anchor, h: m.h, z: m.z })).filter(m => C.masts.includes(m.i));
     this.holes = []; this.ext = []; this.rudder = 0; this.sunk = false; this.dead = false; this.ai = { target: null, side: 0, timer: 0 };

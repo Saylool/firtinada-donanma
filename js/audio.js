@@ -34,6 +34,8 @@ class Sound {
   }
   hit(dist, big = 1) { if (!this.ctx || !this.on) return; const gn = this.gainFor(dist) * big; this.later(dist, t => { this.burst(t, 0.35, 2600, 300, 0.8 * gn, 'bandpass'); this.burst(t, 0.5, 500, 90, 0.9 * gn); }); }
   splash(dist, p = 1) { if (!this.ctx || !this.on) return; const gn = this.gainFor(dist) * p; this.later(dist, t => this.burst(t, 0.6, 3200, 500, 0.35 * gn, 'bandpass')); }
+  musket(dist) { if (!this.ctx || !this.on) return; const gn = this.gainFor(dist) * 0.5; this.later(dist, t => this.burst(t, 0.16, 5200, 900, 0.5 * gn, 'bandpass')); }
+  clang(dist) { if (!this.ctx || !this.on) return; const gn = this.gainFor(dist) * 0.7; this.later(dist, t => { this.burst(t, 0.09, 6800, 2400, 0.5 * gn, 'bandpass'); }); }
   thunder(dist) { if (!this.ctx || !this.on) return; const gn = Math.min(1, 900 / (dist + 300)); this.later(dist * 1.0, t => { this.burst(t, 3.5, 300, 40, 2.2 * gn); this.burst(t + 0.6, 2.5, 200, 35, 1.4 * gn); }); }
   update(seaAmp, windSpeed) { if (!this.ctx) return; const t = this.ctx.currentTime; this.sea.g.gain.setTargetAtTime(0.35 + 0.35 * seaAmp, t, 0.5); }
 }

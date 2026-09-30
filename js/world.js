@@ -44,11 +44,12 @@ class World {
       const x = dir * (-150 + i * 105) + (r() - 0.5) * 30, z = (team === 0 ? -1 : 1) * (150 + r() * 25) + (i % 2) * 30;
       const h = team === 0 ? Math.PI / 2 + 0.05 : -Math.PI / 2 + 0.05;
       const s = new Ship(this.ships.length, team, e.name || names[team][i % 8], x, z, h + (r() - 0.5) * 0.2, this, e.cls || 'line');
-      s.human = e.human || null; s.vel = [Math.sin(h) * 4, 0, Math.cos(h) * 4];
+      this.setSlots(s, e); s.vel = [Math.sin(h) * 4, 0, Math.cos(h) * 4];
       this.ships.push(s);
     }
     this.spinUp();
   }
+  setSlots(s, e) { s.helm = e.helm || e.human || null; s.gun = e.gun || e.human || null; s.hn = e.hn || ''; s.gn = e.gn || ''; s.human = s.helm || s.gun || null; }
   spawnPoint(team) {
     const r = this.rnd || Math.random; let best = null, bd = -1;
     for (let k = 0; k < 12; k++) {
@@ -61,7 +62,7 @@ class World {
   addShip(e) { // drop-in ship (players joining / respawning)
     const team = e.team, h = e.h ?? (team === 0 ? Math.PI / 2 + 0.05 : -Math.PI / 2 + 0.05);
     const [x, z] = e.x !== undefined ? [e.x, e.z] : this.spawnPoint(team);
-    const s = new Ship(this.ships.length, team, e.name, x, z, h, this, e.cls || 'line'); s.human = e.human || null; s.vel = [Math.sin(h) * 4, 0, Math.cos(h) * 4];
+    const s = new Ship(this.ships.length, team, e.name, x, z, h, this, e.cls || 'line'); this.setSlots(s, e); s.vel = [Math.sin(h) * 4, 0, Math.cos(h) * 4];
     const pw = s.toWorld([0, 0, 0]); s.com[1] += Waves.height(pw[0], pw[2], this.t);
     this.ships.push(s); return s;
   }
@@ -71,14 +72,15 @@ class World {
   windAt(t) { const g = 1 + 0.18 * Math.sin(t * 0.37) * Math.sin(t * 0.11 + 1) + 0.08 * Math.sin(t * 1.3); const sp = this.windSpeed * g; return [this.windDir[0] * sp, 0, this.windDir[1] * sp]; }
   update(dt) { // fixed step
     const t = this.t; this.wind = this.windAt(t);
-    this.collideShips();
+    this.collideShips(); this.grapples(dt);
     for (const s of this.ships) if (!s.dead) s.step(dt, t, this.wind);
     for (const d of this.debris) d.step(dt, t);
     this.debris = this.debris.filter(d => d.age < d.life && d.com[1] > -30);
     this.stepBalls(dt);
     this.aiT -= dt; if (this.aiT <= 0) { this.aiT = 0.1; this.ai(0.1); }
+    this.cbT = (this.cbT || 0) - dt; if (this.cbT <= 0) { this.cbT = 0.5; this.combat(0.5); }
     for (const s of this.ships) {
-      for (const g of s.guns) if (g.t > 0) g.t -= dt;
+      const rl = clamp(s.crew / 0.55, 0.2, 1); for (const g of s.guns) if (g.t > 0) g.t -= dt * rl;
       if (s.fires.length) for (let i = s.fires.length - 1; i >= 0; i--) { const f = s.fires[i]; f.t -= dt; const fw = s.toWorld(f.p); if (f.t <= 0 || fw[1] < Waves.height(fw[0], fw[2], t) + 0.2) s.fires.splice(i, 1); else if (s.masts.length && this.rnd() < dt * 0.6) { const m = s.masts[(this.rnd() * s.masts.length) | 0]; const k = (this.rnd() * m.sailHp.length) | 0; m.sailHp[k] = Math.max(0, m.sailHp[k] - 0.02); } }
       if (!s.dead) {
         const dk = s.toWorld([0, 10.0, 0]); const hw = Waves.height(dk[0], dk[2], t);
@@ -119,11 +121,12 @@ class World {
     for (const s of this.ships) {
       if (s.dead) continue;
       const enemies = this.ships.filter(e => e.team !== s.team && !e.sunk && !e.dead);
-      if (s.human) { this.playerTick(s, dt); continue; }
-      if (s.sunk || !enemies.length) { s.rudder = 0; continue; }
+      if (s.helm || s.gun) this.playerTick(s, dt);
+      if (s.sunk || !enemies.length) { if (!s.helm) s.rudder = 0; continue; }
       let best = null, bd = 1e9;
       for (const e of enemies) { const d = Math.hypot(e.com[0] - s.com[0], e.com[2] - s.com[2]) * (e === s.ai.target ? 0.8 : 1); if (d < bd) { bd = d; best = e; } }
       s.ai.target = best;
+      if (!s.helm) {
       const R = s.R, fwd = [R[2], R[8]], fl = Math.hypot(fwd[0], fwd[1]) || 1; fwd[0] /= fl; fwd[1] /= fl;
       const dx = best.com[0] - s.com[0], dz = best.com[2] - s.com[2], rng = Math.hypot(dx, dz), dn = [dx / rng, dz / rng];
       // broadside: choose the perpendicular closest to current heading
@@ -150,8 +153,10 @@ class World {
       // positive yaw (about +y) moves forward from +z toward +x: forward=(sin h, cos h) -> d/dh = (cos h, -sin h); err sign: cross=fx*hz - fz*hx = sin(h)*... = -sin(dh)
       const need = -err;
       s.rudder = clamp(need * 2.2 - yawRate * 5, -1, 1) * clamp(1.2 - s.flood / 2.5e6, 0.2, 1);
-      // gunnery
-      this.gunnery(s, best, dt);
+      // boarding: AI grapples a weakened, adjacent enemy
+      if (!s.board && !best.board && rng < 40 * s.s && best.crew < s.crew * 0.85 && this.rnd() < 0.05) this.startBoard(s);
+      }
+      if (!s.gun && !s.board) this.gunnery(s, best, dt);
     }
     // end-of-battle auto restart is handled by main
   }
@@ -176,11 +181,61 @@ class World {
     }
     return n;
   }
-  // human-controlled ship: apply the latest input
+  // human-controlled slots: helmsman steers/trims/boards, gunner aims/fires
   playerTick(s, dt) {
-    const c = s.ctrl || (s.ctrl = { rud: 0, sail: 1, fire: false, aim: null });
-    s.rudder += (c.rud - s.rudder) * Math.min(1, dt * 4); s.sailSet += (c.sail - s.sailSet) * Math.min(1, dt * 1.5);
-    if (c.fire && c.aim && !s.sunk) this.fireAt(s, c.aim, 0.28, 900);
+    if (s.helm) {
+      const c = s.ctrlH || (s.ctrlH = { rud: 0, sail: 1, board: false });
+      s.rudder += (c.rud - s.rudder) * Math.min(1, dt * 4); s.sailSet += (c.sail - s.sailSet) * Math.min(1, dt * 1.5);
+      if (c.board) { c.board = false; if (!s.board) this.startBoard(s); else this.endBoard(s); }
+    }
+    if (s.gun && !s.sunk) { const c = s.ctrlG; if (c && c.fire && c.aim) this.fireAt(s, c.aim, 0.28, 900); }
+  }
+  // ---------- crew, muskets, boarding ----------
+  startBoard(s) {
+    if (s.board != null || s.sunk) return false; let best = null, bd = 1e9;
+    for (const e of this.ships) { if (e.team === s.team || e.sunk || e.dead || e.board != null) continue; const d = Math.hypot(e.com[0] - s.com[0], e.com[2] - s.com[2]); if (d < bd) { bd = d; best = e; } }
+    if (!best || bd > 46 * Math.max(s.s, best.s)) return false;
+    s.board = best.id; best.board = s.id; if (this.on.board) this.on.board(s, best); return true;
+  }
+  endBoard(s) { const o = s.board != null ? this.ships[s.board] : null; s.board = null; if (o) o.board = null; }
+  grapples(dt) { // ropes hold the two hulls together (spring + damper between hull centres)
+    for (const a of this.ships) {
+      if (a.board == null) continue; const b = this.ships[a.board];
+      if (!b || a.sunk || b.sunk || a.dead || b.dead || b.board !== a.id) { this.endBoard(a); continue; }
+      if (b.id < a.id) continue;
+      const dx = b.com[0] - a.com[0], dz = b.com[2] - a.com[2], d = Math.hypot(dx, dz) || 1;
+      if (d > 70) { this.endBoard(a); continue; }
+      const tgt = 10.5 * (a.s + b.s), ux = dx / d, uz = dz / d, mr = a.M * b.M / (a.M + b.M), k = mr * 0.5, c = 2 * 0.8 * Math.sqrt(k * mr);
+      const rv = (b.vel[0] - a.vel[0]) * ux + (b.vel[2] - a.vel[2]) * uz; const f = clamp(k * (d - tgt) + c * rv, -6e6, 6e6);
+      a.ext.push([a.com[0], a.com[1] + 6 * a.s, a.com[2], ux * f, 0, uz * f]); b.ext.push([b.com[0], b.com[1] + 6 * b.s, b.com[2], -ux * f, 0, -uz * f]);
+    }
+  }
+  combat(dt) {
+    const r = this.rnd;
+    for (const a of this.ships) {
+      if (a.dead || a.sunk) continue;
+      // musket volleys at nearby enemies
+      a.musketT -= dt;
+      if (a.musketT <= 0 && a.crew > 0.1) {
+        let tgt = null, td = 1e9; for (const e of this.ships) { if (e.team === a.team || e.sunk || e.dead) continue; const d = Math.hypot(e.com[0] - a.com[0], e.com[2] - a.com[2]); if (d < td) { td = d; tgt = e; } }
+        if (tgt && td < 75 * Math.max(a.s, tgt.s)) { a.musketT = 1.6 + r() * 1.4; const men = a.crew * a.crewMax * 0.35; tgt.crew = Math.max(0, tgt.crew - men * 0.0035 * (0.5 + r()) / tgt.crewMax * 1.4); if (this.on.musket) this.on.musket(a, tgt); } else a.musketT = 0.7;
+      }
+      // fire on deck kills crew
+      if (a.fires.length) a.crew = Math.max(0, a.crew - a.fires.length * 0.004 * dt);
+      // melee
+      if (a.board != null && a.id < a.board) {
+        const b = this.ships[a.board]; if (!b) continue;
+        const am = a.crew * a.crewMax, bm = b.crew * b.crewMax;
+        const da = 0.022 * am * (0.55 + 0.9 * r()) * dt, db = 0.022 * bm * (0.55 + 0.9 * r()) * dt;
+        b.crew = Math.max(0, (bm - da) / b.crewMax); a.crew = Math.max(0, (am - db) / a.crewMax);
+        if (b.crew < 0.14) this.capture(b, a); else if (a.crew < 0.14) this.capture(a, b);
+      }
+    }
+  }
+  capture(loser, winner) {
+    this.endBoard(loser); loser.team = winner.team; loser.captured = true; loser.crew = Math.max(0.28, loser.crew); winner.crew = Math.max(0.25, winner.crew);
+    loser.helm = loser.gun = loser.human = null; loser.ctrlH = loser.ctrlG = null; loser.ai.target = null;
+    if (this.on.captured) this.on.captured(loser, winner);
   }
   fire(s, g, dw) {
     const r = this.rnd; g.t = 9 + r() * 7; s.stats.shots++;
@@ -248,7 +303,7 @@ class World {
   hullEnter(b, s, pl, pw) {
     const sp = Math.hypot(...b.v); s.stats.hits++;
     const r = (0.2 + this.rnd() * 0.22) * this.damageScale;
-    this.hullHole(s, pl, r, sp);
+    this.hullHole(s, pl, r, sp); s.crew = Math.max(0, s.crew - (0.004 + this.rnd() * 0.008));
     s.impulse(pw, [b.v[0] * BALL_M, b.v[1] * BALL_M, b.v[2] * BALL_M]);
     b.v = b.v.map(x => x * 0.62); b.inside = s.id;
     if (this.on.hit) this.on.hit(pw, b.v, s, 'hull', 1);
@@ -269,7 +324,7 @@ class World {
       const qx = pl[0] - m.anchor[0], qy = pl[1] - m.anchor[1], qz = pl[2] - m.anchor[2];
       if (qy < -1 || qy > m.h) continue;
       if (Math.hypot(qx, qz) < 0.62 + 0.4 * (1 - qy / m.h)) {
-        m.hp -= 35 + this.rnd() * 45; b.v = b.v.map(x => x * 0.5); s.impulse(pw, b.v.map(x => x * BALL_M * 0.5));
+        s.crew = Math.max(0, s.crew - 0.012); m.hp -= 35 + this.rnd() * 45; b.v = b.v.map(x => x * 0.5); s.impulse(pw, b.v.map(x => x * BALL_M * 0.5));
         if (this.on.hit) this.on.hit(pw, b.v, s, 'mast', 1);
         this.spawnPlanks(s, pw, b.v, 3);
         if (m.hp <= 0) this.breakMast(s, m);

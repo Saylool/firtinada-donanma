@@ -25,6 +25,25 @@ class FX {
       this.trailT.set(b, tt);
     }
   }
+  // musket volley from the rail facing the target
+  musket(ship, tgt) {
+    const r = this.rnd, l = ship.toLocal(tgt.com), side = l[0] >= 0 ? 1 : -1, sv = ship.vel;
+    for (let i = 0; i < 3; i++) {
+      const z = (-12 + r() * 27) * ship.s, p = ship.toWorld([side * (5.2 * ship.s), (11.5 + r() * 1.2) * ship.s, z]);
+      this.P(1, p, sv, 0.5, 2, 0.08, [4, 3, 1.2], 1, { add: 1 });
+      this.P(0, p, [sv[0] * 0.6 + (r() - 0.5) * 2, 1.5, sv[2] * 0.6 + (r() - 0.5) * 2], 0.35, 0.8, 2 + r() * 1.5, [0.32, 0.32, 0.33], 0.3, { drag: 1, wind: 0.6 });
+    }
+  }
+  // sword clashes while two ships are lashed together
+  melee(a, b, dt) {
+    this.meleeT = (this.meleeT || 0) - dt; if (this.meleeT > 0) return; this.meleeT = 0.09; const r = this.rnd;
+    const m = [(a.com[0] + b.com[0]) / 2, (a.com[1] + b.com[1]) / 2 + 11 * a.s, (a.com[2] + b.com[2]) / 2];
+    for (let i = 0; i < 2; i++) {
+      const p = [m[0] + (r() - 0.5) * 14 * a.s, m[1] + r() * 1.5, m[2] + (r() - 0.5) * 20 * a.s];
+      this.P(1, p, [(r() - 0.5) * 6, 2 + r() * 4, (r() - 0.5) * 6], 0.12, 0, 0.18, [3, 2.4, 1.2], 1, { add: 1, grav: 9 });
+    }
+    if (r() < 0.12) { const p = [m[0] + (r() - 0.5) * 10, m[1], m[2] + (r() - 0.5) * 16]; this.P(0, p, [0, 1, 0], 0.5, 0.6, 1.6, [0.3, 0.3, 0.3], 0.25, { drag: 1, wind: 0.5 }); return true; }
+  }
   // burning hull: flames + black smoke
   burn(ship, dt, wind) {
     if (!ship.fires || !ship.fires.length) return; this.fireT -= dt; if (this.fireT > 0) return; this.fireT = 0.045; const r = this.rnd;
