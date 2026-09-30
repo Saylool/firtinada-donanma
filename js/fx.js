@@ -44,6 +44,32 @@ class FX {
     }
     if (r() < 0.12) { const p = [m[0] + (r() - 0.5) * 10, m[1], m[2] + (r() - 0.5) * 16]; this.P(0, p, [0, 1, 0], 0.5, 0.6, 1.6, [0.3, 0.3, 0.3], 0.25, { drag: 1, wind: 0.5 }); return true; }
   }
+  // bow spray, stern wash and the boiling sea above a sinking ship
+  shipFX(s, dt, t, wind) {
+    if (s.dead) return; const r = this.rnd, sp = Math.hypot(s.vel[0], s.vel[2]);
+    if (!s.sunk && sp > 2.2) {
+      const bow = s.toWorld([0, 3 * s.s, 23 * s.s]), hw = Waves.height(bow[0], bow[2], t), vy = s.pointVel(bow)[1];
+      const n = sp * (0.5 + Math.max(0, -vy) * 1.6 + (bow[1] < hw + 1.2 ? 2 : 0)) * dt * s.s * 14, fw = [s.R[2], 0, s.R[8]];
+      for (let i = 0; i < n; i++) { const side = r() < 0.5 ? -1 : 1, sideV = s.toWorld([side * 4 * s.s, 0, 18 * s.s]); this.P(2, [bow[0] + (r() - 0.5) * 2, hw + 0.2, bow[2] + (r() - 0.5) * 2], [fw[0] * sp * 0.6 + (sideV[0] - s.com[0]) * 0.15 + (r() - 0.5) * 2, 2 + r() * (2 + sp * 0.5), fw[2] * sp * 0.6 + (sideV[2] - s.com[2]) * 0.15 + (r() - 0.5) * 2], 0.18 + r() * 0.35, 0.5, 0.7 + r() * 0.7, [0.7, 0.76, 0.78], 0.6, { grav: 9.8, drag: 0.3, water: 1 }); }
+    }
+    if (s.sunk && s.com[1] > -24) { // air and foam bursting up from the wreck
+      const n = 26 * dt * s.s; for (let i = 0; i < n; i++) { const p = s.toWorld([(r() - 0.5) * 8 * s.s, 0, (r() - 0.5) * 40 * s.s]), hw = Waves.height(p[0], p[2], t);
+        this.P(2, [p[0], hw + 0.1, p[2]], [(r() - 0.5) * 3, 3 + r() * 7, (r() - 0.5) * 3], 0.35 + r() * 0.6, 0.6, 0.8 + r() * 0.9, [0.78, 0.84, 0.86], 0.75, { grav: 9.8, drag: 0.2, water: 1 }); if (r() < 0.15) this.P(0, [p[0], hw + 0.5, p[2]], [0, 1, 0], 1.6, 2.2, 3, [0.6, 0.66, 0.68], 0.35, { drag: 1, wind: 0.4 }); }
+    }
+  }
+  sinkBurst(s, t) {
+    const r = this.rnd; for (let i = 0; i < 45; i++) { const p = s.toWorld([(r() - 0.5) * 6 * s.s, 2, (r() - 0.5) * 40 * s.s]), hw = Waves.height(p[0], p[2], t); this.P(2, [p[0], hw + 0.3, p[2]], [(r() - 0.5) * 8, 6 + r() * 12, (r() - 0.5) * 8], 0.5 + r() * 0.9, 1, 1.3 + r(), [0.8, 0.86, 0.88], 0.8, { grav: 9.8, drag: 0.2, water: 1 }); }
+    for (let i = 0; i < 6; i++) { const p = s.toWorld([(r() - 0.5) * 6, 6 * s.s, (r() - 0.5) * 30 * s.s]); this.P(0, p, [(r() - 0.5) * 4, 4 + r() * 4, (r() - 0.5) * 4], 3, 3.5, 6, [0.5, 0.5, 0.52], 0.45, { drag: 0.8, wind: 0.5 }); }
+    this.shake = Math.min(1, this.shake + 0.35);
+  }
+  // seagulls wheeling above the fleet in calm weather
+  updateBirds(dt, cam, env, t) {
+    const want = env.rain < 400 && env.wind < 16 && env.light > 0.5 ? 9 : 0; const B = this.birds || (this.birds = []);
+    while (B.length < want) B.push({ a: this.rnd() * 6.28, r: 70 + this.rnd() * 160, h: 28 + this.rnd() * 50, w: 0.15 + this.rnd() * 0.25, ph: this.rnd() * 6, s: 1.1 + this.rnd() * 0.6 });
+    while (B.length > want) B.pop();
+    for (const b of B) { b.a += b.w * dt; const x = cam[0] + Math.cos(b.a) * b.r, z = cam[2] + Math.sin(b.a) * b.r, y = b.h + Math.sin(t * 0.3 + b.ph) * 4; const d = Math.hypot(x - cam[0], y - cam[1], z - cam[2]);
+      this.P(4, [x, y, z], [0, 0, 0], Math.max(0.7, 0.75 * b.s), 0, Math.max(dt * 1.6, 0.03), [0.9, 0.9, 0.92], 0.95, { fade: 0 }).seed = t * (7 + b.ph) + b.ph; }
+  }
   // burning hull: flames + black smoke
   burn(ship, dt, wind) {
     if (!ship.fires || !ship.fires.length) return; this.fireT -= dt; if (this.fireT > 0) return; this.fireT = 0.045; const r = this.rnd;
@@ -124,12 +150,13 @@ class FX {
     const bufs = [[], []]; let n = [0, 0];
     // draw far-to-near for the alpha batch
     const cp = fr.cam.pos; const list = this.ps.slice();
+    const lk = clamp(Math.sqrt(fr.env.light) * 0.85 + 0.15, 0.22, 1.7), sm = Math.max(...fr.env.sun, 0.01), tn = fr.env.sun.map(x => lerp(1, x / sm, 0.4));
     for (const q of list) q.d = (q.x - cp[0]) ** 2 + (q.y - cp[1]) ** 2 + (q.z - cp[2]) ** 2;
     list.sort((a, b) => b.d - a.d);
     for (const q of list) {
       const k = q.add ? 1 : 0; if (n[k] >= 8000) continue; const b = this.buf[k], o = n[k]++ * 12; const f = 1 - q.age / q.life; const al = q.a0 * (q.kind === 0 ? Math.min(1, q.age * 6) * f * f : Math.pow(f, q.fade * (q.add ? 1.5 : 1)));
-      b[o] = q.x; b[o + 1] = q.y; b[o + 2] = q.z; b[o + 3] = q.size; b[o + 4] = q.r; b[o + 5] = q.g; b[o + 6] = q.b; b[o + 7] = al; b[o + 8] = q.rot; b[o + 9] = q.seed; b[o + 10] = q.kind; b[o + 11] = 0;
-      if (!q.add && q.kind === 0) { const lit = 1 + fr.flash * 2.5; b[o + 4] *= lit; b[o + 5] *= lit; b[o + 6] *= lit; }
+      b[o] = q.x; b[o + 1] = q.y; b[o + 2] = q.z; b[o + 3] = q.size; b[o + 4] = q.r; b[o + 5] = q.g; b[o + 6] = q.b; b[o + 7] = al; b[o + 8] = q.kind === 4 ? 0 : q.rot; b[o + 9] = q.seed; b[o + 10] = q.kind; b[o + 11] = 0;
+      if (!q.add && q.kind === 0) { const lit = lk * (1 + fr.flash * 2.5); b[o + 4] *= lit * tn[0]; b[o + 5] *= lit * tn[1]; b[o + 6] *= lit * tn[2]; }
     }
     for (let k = 0; k < 2; k++) {
       if (!n[k]) continue; if (k === 1) gl.blendFunc(gl.SRC_ALPHA, gl.ONE); else gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);

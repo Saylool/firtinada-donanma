@@ -66,6 +66,11 @@ class World {
     const pw = s.toWorld([0, 0, 0]); s.com[1] += Waves.height(pw[0], pw[2], this.t);
     this.ships.push(s); return s;
   }
+  spawnWreck(s) { // barrels and planks burst free when a ship goes down
+    const r = this.rnd; if (this.debris.length > 140) return;
+    for (let i = 0; i < 14; i++) { const p = s.toWorld([(r() - 0.5) * 8 * s.s, 7 * s.s, (r() - 0.5) * 40 * s.s]); const barrel = i % 3 === 0;
+      const d = new Debris('plank', p, [(r() - 0.5) * 7 + s.vel[0] * 0.5, 2 + r() * 6, (r() - 0.5) * 7 + s.vel[2] * 0.5], barrel ? [0.8, 0.8, 0.8] : [1.5 + r() * 3, 0.14, 0.4 + r() * 0.3], barrel ? 420 : 520); this.debris.push(d); }
+  }
   spinUp() { // let hulls settle into the water quickly
     for (const s of this.ships) { const pw = s.toWorld([0, 0, 0]); const h = Waves.height(pw[0], pw[2], 0); s.com[1] += h; }
   }
@@ -84,7 +89,7 @@ class World {
       if (s.fires.length) for (let i = s.fires.length - 1; i >= 0; i--) { const f = s.fires[i]; f.t -= dt; const fw = s.toWorld(f.p); if (f.t <= 0 || fw[1] < Waves.height(fw[0], fw[2], t) + 0.2) s.fires.splice(i, 1); else if (s.masts.length && this.rnd() < dt * 0.6) { const m = s.masts[(this.rnd() * s.masts.length) | 0]; const k = (this.rnd() * m.sailHp.length) | 0; m.sailHp[k] = Math.max(0, m.sailHp[k] - 0.02); } }
       if (!s.dead) {
         const dk = s.toWorld([0, 10.0, 0]); const hw = Waves.height(dk[0], dk[2], t);
-        if (!s.sunk && dk[1] < hw - 1.0) { s.sunk = true; s.sunkT = t; if (this.on.sunk) this.on.sunk(s); }
+        if (!s.sunk && dk[1] < hw - 1.0) { s.sunk = true; s.sunkT = t; this.spawnWreck(s); if (this.on.sunk) this.on.sunk(s); }
         if (s.com[1] < -55) { s.dead = true; }
       }
     }
@@ -111,7 +116,11 @@ class World {
         const va = a.pointVel(pa), vb = b.pointVel(pb); const rv = (va[0] - vb[0]) * ux + (va[2] - vb[2]) * uz;
         const km = Math.pow(Math.min(a.s, b.s), 3), f = km * (3e6 * pen + 1.5e6 * Math.min(0, rv) * -1 * (rv < 0 ? 1 : 0));
         a.ext.push([pa[0], pa[1], pa[2], ux * f, 0, uz * f]); b.ext.push([pb[0], pb[1], pb[2], -ux * f, 0, -uz * f]);
-        if (pen > 1.2 && this.on.crash && rv < -1.5) this.on.crash(pa, -rv);
+        if (pen > 0.5 && rv < -1.3 && (this.t - (a._cd || -9) > 1.5 || this.t - (b._cd || -9) > 1.5)) { // ramming damage: holes at the contact point, crew casualties
+          a._cd = b._cd = this.t; const sp = -rv, mid = [(pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2, (pa[2] + pb[2]) / 2];
+          for (const [sh, o] of [[a, b], [b, a]]) { const lm = sh.toLocal([mid[0], sh.com[1] + 1.5 * sh.s, mid[2]]); lm[1] = 3.2 * sh.s + this.rnd() * 2 * sh.s; const rm = (0.18 + 0.05 * sp) * (1 + 0.4 * (o.s / sh.s)); sh.addHole(lm, Math.min(rm, 0.9), true); sh.crew = Math.max(0, sh.crew - 0.01 * sp); }
+          if (this.on.crash) this.on.crash(mid, sp);
+        }
       }
     }
   }

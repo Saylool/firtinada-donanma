@@ -13,6 +13,7 @@ Saf WebGL2 + JavaScript. Sadece online oda için WebRTC aracı olarak PeerJS (CD
 * **Silahlar**: toplar, yakın mesafede tüfek yaylım ateşi, **abordaj** (F): halatlar iki gemiyi birbirine bağlar (fiziksel yay-sönümleyici), kılıç dövüşü mürettebatı eritir, kaybeden gemi ele geçirilir ve takım değiştirir.
 * **Oyuncu kontrolü**: A/D dümen, W/S yelken, fare ile nişan (toplar yalnızca bordanı çeviren hedefe bakar), Boşluk / tık ile ateş. Minimap, rüzgâr oku, hız/rota, gövde ve top durumu.
 * **Gerçek fizik**: yüzdürme, yelken kuvveti, dümen, balistik, yatma, su alma, batma, yangın, kırılan direkler ve tahtalar — hepsi simülasyondan çıkar, hazır animasyon yok.
+* **Grafik (yeni)**: güneş gölge haritası (yelkenler güverteye ve denize gölge düşürür), denizde gemilerin düzlemsel yansıması, yağmur halkaları, yıldızlı gece + ay, güneş ışınları, hava başına renk ayarı, yelken/tahta kabartma dokusu, korkuluk/şalopa/çapa/aslan başlı pruva gibi gemi detayları, pruva ve batan gemi köpüğü, martılar, batan gemiden çıkan fıçı/tahta enkazı, çarpışma hasarı, otomatik kalite ölçekleme.
 * **Grafik**: prosedürel gökyüzü, şimşek, analitik normalli okyanus (kırılma, köpük, gemi izi), namlu ışığının gemileri aydınlatması, gece fenerleri, HDR + bloom + FXAA, barut dumanı ve sıçramalar.
 
 ## Çalıştırma

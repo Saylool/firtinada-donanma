@@ -23,13 +23,22 @@ class Renderer {
     this.canvas = canvas; this.scale = 1;
     const P = (n, v, f) => new Prog(gl, n, v, f);
     this.pSky = P('sky', SH.skyVS, SH.skyFS); this.pWater = P('water', SH.waterVS, SH.waterFS); this.pShip = P('ship', SH.shipVS, SH.shipFS);
-    this.pLine = P('line', SH.lineVS, SH.lineFS); this.pRain = P('rain', SH.rainVS, SH.rainFS); this.pPart = P('part', SH.partVS, SH.partFS);
+    this.pShadow = P('shadow', SH.shipVS, SH.shadowFS); this.pLine = P('line', SH.lineVS, SH.lineFS); this.pRain = P('rain', SH.rainVS, SH.rainFS); this.pPart = P('part', SH.partVS, SH.partFS);
     this.pCopy = P('copy', SH.postVS, SH.copyFS); this.pBright = P('bright', SH.postVS, SH.brightFS); this.pBlur = P('blur', SH.postVS, SH.blurFS);
     this.pComp = P('comp', SH.postVS, SH.compFS); this.pFxaa = P('fxaa', SH.postVS, SH.fxaaFS);
     this.emptyVAO = gl.createVertexArray();
-    this.buildWater(); this.buildShipMesh(); this.buildBox(); this.buildParticleBuffers();
+    this.makeShadow(); this.buildWater(); this.buildShipMesh(); this.buildBox(); this.buildParticleBuffers();
     this.exposure = 1.25; this.bloom = 0.55; this.foamT = 3.2;
     this.bolt = null; this.tmp = new Float32Array(16);
+  }
+  makeShadow() {
+    const gl = this.gl, N = this.SN = 2048, t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t); gl.texStorage2D(gl.TEXTURE_2D, 1, gl.DEPTH_COMPONENT24, N, N);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_COMPARE_MODE, gl.COMPARE_REF_TO_TEXTURE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_COMPARE_FUNC, gl.LEQUAL);
+    const f = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, f); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, t, 0); gl.drawBuffers([gl.NONE]); gl.readBuffer(gl.NONE);
+    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) console.error('shadow FBO incomplete');
+    this.shadow = { f, d: t }; this.lightVP = new Float32Array(16);
   }
   // ---------- geometry ----------
   buildWater() {
@@ -89,7 +98,7 @@ class Renderer {
     this.A = this.fbo(W, H, true); this.B = this.fbo(W, H, true);
     const hw = W >> 1, hh = H >> 1, qw = W >> 2, qh = H >> 2, ew = W >> 3, eh = H >> 3;
     this.h0 = this.fbo(hw, hh, false); this.q1 = this.fbo(qw, qh, false); this.q2 = this.fbo(qw, qh, false); this.e1 = this.fbo(ew, eh, false); this.e2 = this.fbo(ew, eh, false);
-    this.C = this.fbo(W, H, false, false);
+    this.C = this.fbo(W, H, false, false); this.RF = this.fbo(Math.max(16, W >> 1), Math.max(16, H >> 1), true);
   }
   // Consistency check: evaluate the shader's wave function at sample points on the GPU and read it back.
   gpuWaveHeights(pts, t) {
@@ -108,7 +117,7 @@ class Renderer {
   bindTex(unit, tex) { const gl = this.gl; gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, tex); }
   env(p, fr) {
     p.f('uSunDir', ...fr.sunDir); p.f('uSunCol', ...fr.sunCol); p.f('uFlash', fr.flash); p.f('uFlashDir', ...fr.flashDir); p.f('uCloudOff', fr.cloudOff[0], fr.cloudOff[1]); p.f('uFogD', fr.fogD); p.f('uCam', ...fr.cam.pos);
-    const e = fr.env; p.f('uZen', ...e.zen); p.f('uHor', ...e.hor); p.f('uCloudD', ...e.cd); p.f('uCloudL', ...e.cl); p.f('uGlow', ...e.glow); p.f('uCoverLo', e.lo); p.f('uLight', e.light);
+    p.f('uSkyT', fr.time); const e = fr.env; p.f('uZen', ...e.zen); p.f('uHor', ...e.hor); p.f('uCloudD', ...e.cd); p.f('uCloudL', ...e.cl); p.f('uGlow', ...e.glow); p.f('uCoverLo', e.lo); p.f('uLight', e.light);
     p.f('uWaterD', ...e.wd); p.f('uWaterS', ...e.ws); const L = fr.lights; p.i('uLightN', L.n); p.v('uLights', L.arr, 4);
   }
   waveU(p, t) { p.v('uWA', Waves.A, 4); p.v('uWB', Waves.B, 4); p.f('uTime', t); }
@@ -117,6 +126,16 @@ class Renderer {
     this.resize(fr.width, fr.height);
     const asp = this.W / this.H, proj = M4.perspective(cam.fov, asp, 0.4, 30000), view = M4.lookAt(cam.pos, cam.target, [0, 1, 0]);
     const vp = M4.mul(proj, view.m); this.vp = vp; this.viewInfo = view;
+    // ---- sun shadow map (ships only) ----
+    { const sd = fr.sunDir, ld = V3.norm([sd[0], Math.max(sd[1], 0.16), sd[2]]); const dist = V3.len(V3.sub(cam.pos, cam.target)); const E = clamp(dist * 0.75 + 70, 110, 260), grid = 2 * E / this.SN * 6;
+      const cx = Math.round(cam.target[0] / grid) * grid, cz = Math.round(cam.target[2] / grid) * grid, c = [cx, 0, cz];
+      const lv = M4.lookAt([c[0] + ld[0] * 500, c[1] + ld[1] * 500, c[2] + ld[2] * 500], c, [0, 1, 0]); this.lightVP = M4.mul(M4.ortho(-E, E, -E, E, 50, 1100), lv.m);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.shadow.f); gl.viewport(0, 0, this.SN, this.SN); gl.depthMask(true); gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE); gl.clearDepth(1); gl.clear(gl.DEPTH_BUFFER_BIT);
+      gl.colorMask(false, false, false, false); this.drawShips(fr, this.lightVP, this.pShadow, 'shadow'); gl.colorMask(true, true, true, true); }
+    this.bindTex(5, this.shadow.d);
+    // ---- planar reflection of the ships (geometry mirrored about y=0, same camera) ----
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.RF.f); gl.viewport(0, 0, this.RF.w, this.RF.h); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    this.drawShips(fr, vp, this.pShip, 'mirror');
     // ---- scene A ----
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.A.f); gl.viewport(0, 0, this.W, this.H);
     gl.clearColor(0, 0, 0, 1); gl.clearDepth(1); gl.depthMask(true); gl.disable(gl.BLEND); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -133,7 +152,7 @@ class Renderer {
     p = this.pWater.use(); this.env(p, fr); this.waveU(p, fr.time); p.m('uVP', vp);
     p.f('uCenter', Math.round(cam.pos[0] / 2) * 2, Math.round(cam.pos[2] / 2) * 2); p.f('uRes', this.W, this.H); p.f('uNear', 0.4); p.f('uFar', 30000);
     p.f('uAmp', Waves.amp); p.f('uWindAng', Waves.windAngle); p.f('uFoamT', this.foamT * (0.75 + 0.25 * Waves.amp));
-    this.bindTex(0, this.A.c); p.i('uScene', 0); this.bindTex(1, this.A.d); p.i('uDepthT', 1);
+    this.bindTex(0, this.A.c); p.i('uScene', 0); this.bindTex(1, this.A.d); p.i('uDepthT', 1); this.bindTex(2, this.RF.c); p.i('uRefl', 2); this.bindTex(5, this.shadow.d); p.i('uShadow', 5); p.m('uLightVP', this.lightVP); p.f('uRain', clamp(fr.rain / 7000, 0, 1));
     const sa = new Float32Array(48), sb = new Float32Array(48); let n = 0;
     for (const s of w.ships) { if (s.dead || n >= 12) continue; const R = s.R; let fx = R[2], fz = R[8]; const l = Math.hypot(fx, fz) || 1; fx /= l; fz /= l; const o = s.toWorld([0, 0, 0]);
       sa.set([o[0], o[2], fx, fz], n * 4); sb.set([25 * s.s, 6.5 * s.s, Math.hypot(s.vel[0], s.vel[2]), s.sunk ? 0.4 : 1], n * 4); n++; }
@@ -155,9 +174,9 @@ class Renderer {
     const l = gl.getAttribLocation(p.p, 'aPos'); gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
     gl.drawArrays(gl.LINES, 0, b.verts.length / 3);
   }
-  drawShips(fr, vp) {
+  drawShips(fr, vp, prog, mode) {
     const gl = this.gl, w = fr.world, d = this.design;
-    let p = this.pShip.use(); this.env(p, fr); this.waveU(p, fr.time); p.m('uVP', vp); p.f('uScale', 1, 1, 1); p.i('uKind', 0);
+    let p = (prog || this.pShip).use(); this.env(p, fr); this.waveU(p, fr.time); p.m('uVP', vp); p.f('uScale', 1, 1, 1); p.i('uKind', 0); p.f('uMirror', mode === 'mirror' ? 1 : 0); p.m('uLightVP', this.lightVP); p.i('uShadow', 5);
     const hole = new Float32Array(96), sh = new Float32Array(40), sm = new Float32Array(9);
     gl.bindVertexArray(this.shipVAO);
     for (const s of w.ships) {
@@ -198,6 +217,7 @@ class Renderer {
       p.m('uModel', db.modelMatrix(this.tmp)); p.f('uScale', db.size[0], db.size[1], db.size[2]); gl.drawElements(gl.TRIANGLES, this.boxCount, gl.UNSIGNED_INT, 0);
     }
     p.f('uScale', 1, 1, 1);
+    if (mode) return;
     // boarding ropes
     { const v = []; for (const a of w.ships) { if (a.board == null || a.dead) continue; const b = w.ships[a.board]; if (!b || b.id < a.id) continue;
         const same = (a.R[2] * b.R[2] + a.R[8] * b.R[8]) > 0; for (const z of [-9, 0, 9]) { const pa = a.toWorld([0, 11 * a.s, z * a.s]), pb = b.toWorld([0, 11 * b.s, (same ? z : -z) * b.s]); v.push(...pa, ...pb); } }
@@ -219,7 +239,9 @@ class Renderer {
     down(this.h0, this.q1); blur(this.q1, this.q2, 1, 0); blur(this.q2, this.q1, 0, 1);
     down(this.q1, this.e1); blur(this.e1, this.e2, 1, 0); blur(this.e2, this.e1, 0, 1); blur(this.e1, this.e2, 1.5, 0); blur(this.e2, this.e1, 0, 1.5);
     p = this.pass(this.C, this.pComp); this.bindTex(0, this.B.c); this.bindTex(1, this.q1.c); this.bindTex(2, this.e1.c); p.i('uT', 0); p.i('uB1', 1); p.i('uB2', 2);
-    p.f('uExp', fr.env.exp * (1 - Math.min(0.35, fr.flash * 0.3))); p.f('uTime', fr.time % 100); p.f('uFlash', fr.flash); p.f('uBloom', fr.env.bloom + fr.flash * 0.3); p.f('uRes', this.W, this.H);
+    p.f('uExp', fr.env.exp * (1 - Math.min(0.35, fr.flash * 0.3))); p.f('uTime', fr.time % 100); p.f('uFlash', fr.flash); p.f('uBloom', fr.env.bloom + fr.flash * 0.3); p.f('uRays', fr.env.rays); p.f('uSat', fr.env.sat);
+    { const sd = fr.sunDir, c = this.vp, X = fr.cam.pos[0] + sd[0] * 6000, Y = fr.cam.pos[1] + sd[1] * 6000, Z = fr.cam.pos[2] + sd[2] * 6000; const cx = c[0] * X + c[4] * Y + c[8] * Z + c[12], cy = c[1] * X + c[5] * Y + c[9] * Z + c[13], cw = c[3] * X + c[7] * Y + c[11] * Z + c[15];
+      const on = cw > 0 ? clamp(1 - Math.max(Math.abs(cx / cw), Math.abs(cy / cw) * 1.2) * 0.55, 0, 1) : 0; p.f('uSun', cx / cw * 0.5 + 0.5, cy / cw * 0.5 + 0.5, on * clamp(sd[1] * 6 + 0.3, 0, 1)); } p.f('uRes', this.W, this.H);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     p = this.pass(null, this.pFxaa); this.bindTex(0, this.C.c); p.i('uT', 0); p.f('uTexel', 1 / this.W, 1 / this.H); gl.drawArrays(gl.TRIANGLES, 0, 3);
   }

@@ -120,6 +120,26 @@ const Hull = (() => {
     mb.box([0, deckY(0.05) + 0.3, 6], [3.4, 0.6, 3.4], 3); mb.box([0, deckY(0.05) + 0.3, -4], [3, 0.6, 5], 3);
     mb.cyl([0, deckY(0.3), 9.5], [0, deckY(0.3) + 1.3, 9.5], 0.5, 0.45, 8, 3);
     mb.box([0, deckY(-0.5) + 0.35, -18.5], [1.6, 0.7, 1.4], 3); mb.cyl([0, deckY(-0.5) + 1.0, -19.5], [0, deckY(-0.5) + 1.0, -19.5 + 0.01], 0.6, 0.6, 10, 3);
+    // rail cap along the bulwark, open taffrail + forecastle rail, quarter galleries, lifeboat, anchors, lion figurehead
+    for (const side of [1, -1]) {
+      let prev = null;
+      for (let j = 0; j <= 44; j++) {
+        const sj = -Math.cos(j / 44 * Math.PI), z = sj * HL, w = halfBeam(sj) * sec(1), cur = [side * (w + 0.02), rim(sj) + 0.1, z];
+        if (prev && w > 0.3) mb.cyl(prev, cur, 0.1, 0.1, 5, 3);
+        if (j % 3 === 0 && w > 0.8 && (sj < -0.3 || sj > 0.66)) mb.cyl([cur[0], rim(sj) - 0.2, z], [cur[0], rim(sj) + 0.95, z], 0.07, 0.07, 4, 3);
+        prev = w > 0.3 ? cur : null;
+      }
+      const rl = []; for (let j = 0; j <= 14; j++) { const sj = -1 + j / 14 * 0.66, w = halfBeam(sj) * sec(1); rl.push([side * (w + 0.02), rim(sj) + 0.95, sj * HL]); } for (let j = 1; j < rl.length; j++) mb.cyl(rl[j - 1], rl[j], 0.06, 0.06, 4, 3);
+      const fr = []; for (let j = 0; j <= 8; j++) { const sj = 0.66 + j / 8 * 0.3, w = halfBeam(sj) * sec(1); if (w > 0.3) fr.push([side * (w + 0.02), rim(sj) + 0.95, sj * HL]); } for (let j = 1; j < fr.length; j++) mb.cyl(fr[j - 1], fr[j], 0.06, 0.06, 4, 3);
+      // quarter gallery
+      const gx = side * (halfBeam(-0.93) * sec(1) + 0.55), gz = -HL * 0.95, gy = rim(-0.95) - 2.8;
+      mb.box([gx, gy, gz], [1.5, 3.3, 3.4], 3); mb.box([gx, gy + 1.9, gz], [1.8, 0.3, 3.8], 4); mb.box([gx, gy - 1.75, gz], [1.7, 0.25, 3.7], 4);
+      for (const dz of [-1, 0, 1]) mb.box([gx + side * 0.76, gy + 0.1, gz + dz * 1.0], [0.08, 1.1, 0.7], 4, 1);
+      // anchor on the cathead
+      const ax = side * (halfBeam(0.8) * sec(1) + 0.4), ay = rim(0.8) - 1.4, az = 0.8 * HL; mb.cyl([ax, ay - 1.2, az], [ax, ay + 1.0, az], 0.11, 0.11, 5, 6); mb.box([ax, ay + 0.75, az], [1.5, 0.12, 0.12], 6); mb.box([ax, ay - 1.25, az], [0.12, 0.35, 1.3], 6);
+    }
+    { const y = deckY(-0.27) + 0.05; mb.box([0, y + 0.45, -8], [2.0, 0.9, 5.2], 3); mb.box([0, y + 0.95, -8], [1.6, 0.2, 4.6], 1); mb.box([0, y + 0.45, -8], [0.12, 0.92, 5.3], 4); }
+    { const hy = rim(1) + 0.9; mb.box([0, hy, 27.3], [0.9, 0.9, 1.4], 4); mb.box([0, hy - 0.45, 28.1], [0.55, 0.5, 0.9], 4); mb.cyl([0, hy, 26.6], [0, hy, 27.0], 0.75, 0.6, 8, 4); for (const sx of [-1, 1]) mb.box([sx * 0.27, hy + 0.55, 27.6], [0.14, 0.35, 0.14], 4); }
     // cannon barrels poking through the ports
     for (const g of guns()) {
       const side = g.side, s = g.p[2] / HL, w = halfWidth(s, g.p[1]);

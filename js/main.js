@@ -7,7 +7,7 @@
   try { R = new Renderer(canvas); } catch (e) { const el = $('err'); el.style.display = 'flex'; el.textContent = 'WebGL2 başlatılamadı: ' + e.message; throw e; }
   Hull.build();
   const world = new World(), fx = new FX(), snd = new Sound();
-  const cfg = { seed: +(qs.get('seed') || (Math.random() * 9999 | 0)), perTeam: +(qs.get('ships') || 3), ts: +(qs.get('ts') || 1), dpr: 1.5, scale: 1 };
+  const cfg = { seed: +(qs.get('seed') || (Math.random() * 9999 | 0)), perTeam: +(qs.get('ships') || 3), ts: +(qs.get('ts') || 1), dpr: 1.5, scale: +(qs.get('scale') || 1) };
   const G = { role: 'spectate', my: null, name: '', cls: 'line', team: 'auto', players: new Map(), snaps: [], evq: [], evc: [], lastRecv: 0, seed: cfg.seed, perTeam: cfg.perTeam, aim: null, mouse: null, fleetN: -1, respawnT: 0 };
   let paused = false, timeScale = cfg.ts, focus = 0, camMode = qs.get('cam') || 'cine', menuOpen = true;
   const cam = { pos: [0, 30, -300], target: [0, 8, 0], fov: 58 * Math.PI / 180 };
@@ -221,7 +221,7 @@
   world.on.hit = (pos, v, ship, kind, pw) => { fxHit(pos, v, ship, kind, pw); if (kind === 'break') feed(`${ship.name}: direk kırıldı`, teamCol(ship.team)); ev({ k: 'h', p: pos.map(r1), v: v.map(r1), si: ship.id, kind, pw }); };
   world.on.splash = (pos, p, v) => { fxSplash(pos, p, v); ev({ k: 'w', p: pos.map(r1), pw: r2(p), v: v.map(r1) }); };
   world.on.crash = pos => { fx.hit(pos, [0, 0, 0], { vel: [0, 0, 0] }, 'hull', 1.5); snd.hit(distCam(pos), 1.2); ev({ k: 'c', p: pos.map(r1) }); };
-  world.on.sunk = s => { sunkMsg(s); ev({ k: 'k', si: s.id }); };
+  world.on.sunk = s => { sunkMsg(s); fx.sinkBurst(s, world.t); ev({ k: 'k', si: s.id }); };
   function fxMusket(a, t) { fx.musket(a, t); snd.musket(distCam(a.com)); }
   function boardMsg(a, b) { feed(`⚔ ${a.name} ${b.name} gemisine abordaj yapıyor!`, teamCol(a.team)); if (a === G.my || b === G.my) flashMsg('ABORDAJ!'); }
   function capMsg(l, w) { feed(`🏴 ${w.name}, ${l.name} gemisini ele geçirdi!`, teamCol(w.team)); if (l === G.my) flashMsg('Geminiz ele geçirildi!'); buildFleetUI(); }
@@ -334,7 +334,7 @@
     const s = world.ships[e.si];
     if (e.k === 's' && s) fxShot(e.p, e.d, s); else if (e.k === 'h' && s) { fxHit(e.p, e.v, s, e.kind, e.pw); if (e.kind === 'break') feed(`${s.name}: direk kırıldı`, teamCol(s.team)); }
     else if (e.k === 'w') fxSplash(e.p, e.pw, e.v); else if (e.k === 'c') { fx.hit(e.p, [0, 0, 0], { vel: [0, 0, 0] }, 'hull', 1.5); snd.hit(distCam(e.p), 1.2); }
-    else if (e.k === 'k' && s) { s.sunk = true; sunkMsg(s); }
+    else if (e.k === 'k' && s) { s.sunk = true; sunkMsg(s); fx.sinkBurst(s, world.t); }
     else if (e.k === 'm' && s && world.ships[e.ti]) fxMusket(s, world.ships[e.ti]);
     else if (e.k === 'b' && s && world.ships[e.ti]) boardMsg(s, world.ships[e.ti]);
     else if (e.k === 'x' && s && world.ships[e.ti]) capMsg(s, world.ships[e.ti]);
@@ -488,13 +488,13 @@
   function tick(now) {
     requestAnimationFrame(tick);
     const dt = clamp((now - last) / 1000, 0, 0.1); last = now;
-    fpsAcc += dt; fpsN++; if (fpsAcc > 0.5) { state.fps = fpsN / fpsAcc; fpsAcc = 0; fpsN = 0; }
+    fpsAcc += dt; fpsN++; if (fpsAcc > 0.5) { state.fps = fpsN / fpsAcc; fpsAcc = 0; fpsN = 0; state.q = (state.q || 0) + 1; if (state.q % 4 === 0 && !qs.get('scale')) { if (state.fps < 28) cfg.scale = Math.max(0.55, cfg.scale * 0.88); else if (state.fps > 56 && cfg.scale < 1) cfg.scale = Math.min(1, cfg.scale * 1.06); } }
     env = Weather.update(dt); Waves.setAmp(env.amp, env.sharp); fx.boltEvery = env.bolt; world.windSpeed = env.wind;
     const ts = G.role === 'host' || isNet() ? 1 : timeScale;
     if (!paused || G.role === 'host') {
       if (isSim()) { acc += dt * ts; let n = 0; while (acc >= STEP && n < 60) { world.update(STEP); acc -= STEP; n++; } if (n >= 60) acc = 0; }
       else clientUpdate(dt);
-      fx.update(dt * ts, world.t, world.wind, cam.pos); fx.updateBalls(world.balls, dt * ts, cam.pos); for (const s of world.ships) fx.burn(s, dt * ts, world.wind);
+      fx.update(dt * ts, world.t, world.wind, cam.pos); fx.updateBalls(world.balls, dt * ts, cam.pos); for (const s of world.ships) { fx.burn(s, dt * ts, world.wind); fx.shipFX(s, dt * ts, world.t, world.wind); } fx.updateBirds(dt, cam.pos, env, world.t);
       for (const a of world.ships) if (a.board != null && a.id < a.board && world.ships[a.board]) { if (fx.melee(a, world.ships[a.board], dt * ts)) snd.clang(distCam(a.com)); }
       snd.cam = cam.pos; snd.update(env.amp, env.wind);
     }
